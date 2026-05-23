@@ -1,0 +1,32 @@
+[
+  {
+    "label": "test",
+    "command": "cargo test",
+  },
+  {
+    "label": "bench",
+    "command": "cargo bench -p example",
+  },
+  {
+    "label": "example",
+    "command": "cargo run -p example",
+  },
+  {
+    "label": "build",
+    "command": "cargo build -p example --release",
+  },
+  {
+    "label": "coverage",
+    "command": "cargo +nightly llvm-cov --package ftl-codegen --summary-only",
+    "env": { "CARGO_TERM_COLOR": "always" },
+  },
+  {
+    "label": "coverage with html report",
+    "command": "cargo +nightly llvm-cov --html --package ftl-codegen",
+    "env": { "CARGO_TERM_COLOR": "always" },
+  },
+  {
+    "label": "clean",
+    "command": "cargo clean",
+  },
+]

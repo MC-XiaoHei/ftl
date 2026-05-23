@@ -1,0 +1,16 @@
+[package]
+name = "example"
+version = "0.1.0"
+edition = "2021"
+
+[[bench]]
+harness = false
+name = "i18n_bench"
+
+[dependencies]
+
+[dev-dependencies]
+criterion = "0.5"
+
+[build-dependencies]
+ftl-codegen = { path = "../codegen" }
