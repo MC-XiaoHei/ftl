@@ -41,9 +41,10 @@ ftl_codegen::generate(
 include!(concat!(env!("OUT_DIR"), "/i18n_gen.rs"));
 
 fn main() {
-    println!("{}", t!(settings()));
-    set_lang(Lang::ZhCn);
-    println!("{}", t!(hello("世界")));
+    set_lang(Lang::EnUs);
+    println!("{}", t!(hello_world()));
+    println!("{}", t!(hello("MC_XiaoHei")));
+    println!("{}", t!(files(114514)));
 }
 ```
 
@@ -52,11 +53,11 @@ fn main() {
 **Plain text -> `&'static str`**
 
 ```ftl
-settings = Settings
+hello_world = Hello, World!
 ```
 
 ```rust
-pub fn settings() -> &'static str { "Settings" }
+pub fn hello_world() -> &'static str { "Hello, World!" }
 ```
 
 **Variable interpolation -> Pre-allocated `String`**
