@@ -2,6 +2,9 @@
 name = "ftl-codegen"
 version = "0.1.0"
 edition = "2021"
+description = "Compile-time Fluent (.ftl) translation to type-safe Rust functions"
+repository = "https://github.com/MC-XiaoHei/ftl"
+license = "MIT"
 
 [dependencies]
 fluent-syntax = "0.12"
