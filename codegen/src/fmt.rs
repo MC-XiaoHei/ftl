@@ -3,7 +3,7 @@ use std::fmt::Write;
 
 use crate::ast::*;
 use crate::plural::plural_rule_or_fallback;
-use crate::util::escape_str;
+use crate::util::{escape_str, sanitize};
 
 pub fn generate_one_function(
     name: &str,
@@ -40,7 +40,8 @@ pub fn generate_one_function(
 
 pub fn gen_fn_decl(name: &str, params: &BTreeMap<String, ParamType>, with_self: bool) -> String {
     let mut out = String::new();
-    write!(out, "{}(", name).unwrap();
+    let safe_name = sanitize(name);
+    write!(out, "{}(", safe_name).unwrap();
     let mut first = true;
     if with_self {
         write!(out, "&self").unwrap();

@@ -286,6 +286,7 @@ impl Generator {
     fn emit_module(&self, locale: &str, out: &mut String) {
         let mod_name = sanitize(locale);
         writeln!(out, "pub mod {} {{", mod_name).unwrap();
+        writeln!(out, "    #![allow(non_snake_case)]").unwrap();
         writeln!(out, "    use std::fmt::Write;").unwrap();
         let le = &self.locales[locale];
         let pe = &self.locales[&self.primary];
@@ -356,6 +357,7 @@ impl Generator {
     }
 
     fn emit_trait(&self, out: &mut String) {
+        writeln!(out, "#[allow(non_snake_case)]").unwrap();
         writeln!(out, "pub trait I18n {{").unwrap();
         for msg in self.locales[&self.primary].messages.values() {
             writeln!(
@@ -395,7 +397,14 @@ impl Generator {
                 collect_params_with_context(&msg.elements, &format!("message '{}'", msg.name));
             let args: Vec<&str> = params.keys().map(|s| s.as_str()).collect();
             writeln!(out, "    fn {} {{", gen_fn_decl(&msg.name, &params, true)).unwrap();
-            writeln!(out, "        {}::{}({})", mn, msg.name, args.join(", ")).unwrap();
+            writeln!(
+                out,
+                "        {}::{}({})",
+                mn,
+                sanitize(&msg.name),
+                args.join(", ")
+            )
+            .unwrap();
             writeln!(out, "    }}").unwrap();
         }
         for attr in self.locales[&self.primary].attributes.values() {
@@ -406,7 +415,14 @@ impl Generator {
             let fn_name = flatten_attr_name(&attr.owner, &attr.name);
             let args: Vec<&str> = params.keys().map(|s| s.as_str()).collect();
             writeln!(out, "    fn {} {{", gen_fn_decl(&fn_name, &params, true)).unwrap();
-            writeln!(out, "        {}::{}({})", mn, fn_name, args.join(", ")).unwrap();
+            writeln!(
+                out,
+                "        {}::{}({})",
+                mn,
+                sanitize(&fn_name),
+                args.join(", ")
+            )
+            .unwrap();
             writeln!(out, "    }}").unwrap();
         }
         writeln!(out, "}}").unwrap();
