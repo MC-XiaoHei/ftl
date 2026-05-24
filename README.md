@@ -15,8 +15,6 @@ Test Environment: AMD AI 9 H 365, `cargo bench -p example`.
 - get locale: <500 ps
 - translate: <50 ns
 
-Translations are resolved entirely at compile time — runtime cost is just a function call, no parsing, no hash lookups.
-
 ## Limitations
 
 A full walkthrough of supported and unsupported FTL syntax is available in
