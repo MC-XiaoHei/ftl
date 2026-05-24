@@ -79,7 +79,7 @@ fn main() {
 
 **Plain text -> `&'static str`**
 
-```ftl
+```fluent
 hello_world = Hello, World!
 ```
 
@@ -89,7 +89,7 @@ pub fn hello_world() -> &'static str { "Hello, World!" }
 
 **Variable interpolation -> Pre-allocated `String`**
 
-```ftl
+```fluent
 hello = Hello, { $name }!
 ```
 
@@ -106,7 +106,7 @@ pub fn hello(name: &str) -> String {
 
 **Select (plural) -> `match`**
 
-```ftl
+```fluent
 files =
     { $count ->
         [one] 1 file
@@ -131,7 +131,7 @@ pub fn files(count: usize) -> String {
 
 **String select -> `match` with `&str` keys**
 
-```ftl
+```fluent
 welcome =
     { $gender ->
         [male] Welcome, sir
@@ -150,7 +150,7 @@ pub fn welcome(gender: &str) -> String {
 
 **Message reference -> compile-time inlined**
 
-```ftl
+```fluent
 app-name = Zed
 about = About { app-name }
 ```
@@ -161,7 +161,7 @@ pub fn about() -> &'static str { "About Zed" }
 
 **Term reference -> compile-time inlined**
 
-```ftl
+```fluent
 -brand-name = Zed
 welcome = Welcome to { -brand-name }
 ```
@@ -172,7 +172,7 @@ pub fn welcome() -> &'static str { "Welcome to Zed" }
 
 **Parameterized term -> compile-time substitution**
 
-```ftl
+```fluent
 -brand-name = { $case } Zed
 about = About { -brand-name(case: "Awesome") }
 ```
@@ -183,7 +183,7 @@ pub fn about() -> &'static str { "About Awesome Zed" }
 
 **Message attributes -> flattened functions**
 
-```ftl
+```fluent
 save =
     .label = Save
     .tooltip = Save current file
@@ -196,7 +196,7 @@ pub fn save__tooltip() -> &'static str { "Save current file" }
 
 **Inline literals**
 
-```ftl
+```fluent
 msg = { "hello" } world
 count = { 42 }
 ```
