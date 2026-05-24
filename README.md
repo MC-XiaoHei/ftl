@@ -32,13 +32,16 @@ Currently, FTL only supports a subset of the Fluent syntax:
 - ✓ `{ -term }` / `{ message }` references to terms/messages
 - ✓ `msg.attr = value` message attributes
 - ✓ `-term_name = value` term definitions
-- ✗ Fluent built-in functions (`NUMBER()`, `DATETIME()`, etc.)
+- ✓ Named term arguments
 - ✗ Positional term arguments
+- ✗ Fluent built-in functions (`NUMBER()`, `DATETIME()`, etc.)
 
 **Select expressions**
 
-- Select selector must be a variable reference (`{ $var -> ... }`). Other selector types will panic.
+- Select selector must be a variable reference (`{ $var -> ... }`). Other selector types are rejected at build time.
 - Select selector type is inferred: numeric variant keys or plural categories (`[one]`, `[few]`, etc.) → `usize`; string variant keys like `[male]` / `[female]` → `&str`.
+- Cyclic references between messages or terms are detected and rejected at build time.
+- Parameters with conflicting inferred types (e.g. used as both `&str` and `usize`) are detected and rejected at build time.
 
 **Locales**
 
@@ -159,6 +162,24 @@ about = About { app-name }
 pub fn about() -> &'static str { "About Zed" }
 ```
 
+**Dynamic message reference inlining -> free variable propagation**
+
+```fluent
+name = { $user }
+welcome = Welcome, { name }!
+```
+
+```rust
+pub fn welcome(user: &str) -> String {
+    let cap = 9 + user.len() + 1;
+    let mut s = String::with_capacity(cap);
+    s.push_str("Welcome, ");
+    s.push_str(user);
+    s.push_str("!");
+    s
+}
+```
+
 **Term reference -> compile-time inlined**
 
 ```fluent
@@ -179,6 +200,24 @@ about = About { -brand-name(case: "Awesome") }
 
 ```rust
 pub fn about() -> &'static str { "About Awesome Zed" }
+```
+
+**Parameterized term with variable argument**
+
+```fluent
+-brand-name = { $case } Zed
+about = About { -brand-name(case: $variant) }
+```
+
+```rust
+pub fn about(variant: &str) -> String {
+    let cap = 7 + variant.len() + 4;
+    let mut s = String::with_capacity(cap);
+    s.push_str("About ");
+    s.push_str(variant);
+    s.push_str(" Zed");
+    s
+}
 ```
 
 **Message attributes -> flattened functions**
