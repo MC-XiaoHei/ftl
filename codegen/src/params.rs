@@ -10,7 +10,12 @@ pub fn collect_params(elements: &[Element]) -> BTreeMap<String, ParamType> {
 fn collect_params_into(elements: &[Element], map: &mut BTreeMap<String, ParamType>) {
     for e in elements {
         match e {
-            Element::Text(_) | Element::MessageRef(_) | Element::TermRef(_) => {}
+            Element::Text(_) | Element::MessageRef(_) => {}
+            Element::TermRef { args, .. } => {
+                for value in args.values() {
+                    collect_params_into(std::slice::from_ref(value), map);
+                }
+            }
             Element::VarRef(name) => {
                 map.entry(name.clone()).or_insert(ParamType::Str);
             }

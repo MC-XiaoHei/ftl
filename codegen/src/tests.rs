@@ -387,6 +387,30 @@ fn term_reference_is_expanded_at_build_time() {
 }
 
 #[test]
+fn parameterized_term_expands_with_arguments() {
+    use crate::parse::Generator;
+    use std::fs;
+    use std::path::PathBuf;
+
+    let dir = PathBuf::from(std::env::temp_dir())
+        .join(format!("ftl_test_term_args_{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+
+    fs::write(
+        dir.join("en-US.ftl"),
+        "-brand-name = { $case } Zed\nabout = About { -brand-name(case: \"Cool\") }\n",
+    )
+    .unwrap();
+
+    let gen = Generator::load(&dir, "en-US");
+    let code = gen.generate();
+    assert!(code.contains("pub fn about() -> &'static str { \"About Cool Zed\" }"));
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn free_variables_propagate_through_message_references() {
     use crate::parse::Generator;
     use std::fs;

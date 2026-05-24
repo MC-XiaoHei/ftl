@@ -31,7 +31,10 @@ pub enum Element {
     Text(String),
     VarRef(String),
     MessageRef(String),
-    TermRef(String),
+    TermRef {
+        name: String,
+        args: BTreeMap<String, Element>,
+    },
     Select {
         selector: String,
         variants: Vec<Variant>,

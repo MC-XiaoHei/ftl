@@ -101,7 +101,7 @@ fn capacity_expr(elements: &[Element], params: &BTreeMap<String, ParamType>) -> 
                 });
             }
             Element::Select { .. } => unreachable!(),
-            Element::MessageRef(_) | Element::TermRef(_) => unreachable!(),
+            Element::MessageRef(_) | Element::TermRef { .. } => unreachable!(),
         }
     }
     if acc > 0 {
@@ -138,7 +138,7 @@ fn emit_push_statements(
                 }
             },
             Element::Select { .. } => unreachable!(),
-            Element::MessageRef(_) | Element::TermRef(_) => unreachable!(),
+            Element::MessageRef(_) | Element::TermRef { .. } => unreachable!(),
         }
     }
 }
