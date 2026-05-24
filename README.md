@@ -27,20 +27,22 @@ Currently, FTL only supports a subset of the Fluent syntax:
 - ✓ Plain text
 - ✓ `{ $var }` variable reference
 - ✓ `{ $var -> [one] ... *[other] ... }` select expression with CLDR plurals
-- ✗ `{ "str" }`, `{ 42 }`, `{ FUNC() }` — inline literal expressions, will panic
-- ✗ `{ -term }`, `{ message }` — references to terms/messages
-- ✗ `msg.attr = value` — message attributes
-- ✗ `-term_name = value` — term definitions
+- ✓ `{ $var -> [male] ... *[other] ... }` string select
+- ✓ `{ "str" }` / `{ 42 }` inline literal expressions
+- ✓ `{ -term }` / `{ message }` references to terms/messages
+- ✓ `msg.attr = value` message attributes
+- ✓ `-term_name = value` term definitions
 - ✗ Fluent built-in functions (`NUMBER()`, `DATETIME()`, etc.)
+- ✗ Positional term arguments
 
 **Select expressions**
 
 - Select selector must be a variable reference (`{ $var -> ... }`). Other selector types will panic.
-- Select selector is always typed as `usize`. Using string variant keys like `[male]` / `[female]` will fail at compile time — only numeric plural categories (`[one]`, `[few]`, etc.) work correctly.
+- Select selector type is inferred: numeric variant keys or plural categories (`[one]`, `[few]`, etc.) → `usize`; string variant keys like `[male]` / `[female]` → `&str`.
 
 **Locales**
 
-- Non-primary locales must be a subset of the primary locale's message keys. Extra keys in a secondary locale will panic at build time.
+- Non-primary locales must be a subset of the primary locale's message keys, terms, and attributes. Extra keys will report a build error.
 - Missing messages in secondary locales fall back to the primary locale's content with a comment in generated code — no runtime fallback mechanism.
 
 ## Usage
@@ -68,8 +70,8 @@ include!(concat!(env!("OUT_DIR"), "/i18n_gen.rs"));
 fn main() {
     set_lang(Lang::EnUs);
     println!("{}", t!(hello_world()));
-    println!("{}", t!(hello("MC_XiaoHei")));
-    println!("{}", t!(files(114514)));
+    println!("{}", t!(hello("World")));
+    println!("{}", t!(files(1)));
 }
 ```
 
@@ -125,6 +127,83 @@ pub fn files(count: usize) -> String {
         }
     }
 }
+```
+
+**String select -> `match` with `&str` keys**
+
+```ftl
+welcome =
+    { $gender ->
+        [male] Welcome, sir
+       *[other] Welcome
+    }
+```
+
+```rust
+pub fn welcome(gender: &str) -> String {
+    match gender {
+        "male" => "Welcome, sir".to_string(),
+        _ => "Welcome".to_string(),
+    }
+}
+```
+
+**Message reference -> compile-time inlined**
+
+```ftl
+app-name = Zed
+about = About { app-name }
+```
+
+```rust
+pub fn about() -> &'static str { "About Zed" }
+```
+
+**Term reference -> compile-time inlined**
+
+```ftl
+-brand-name = Zed
+welcome = Welcome to { -brand-name }
+```
+
+```rust
+pub fn welcome() -> &'static str { "Welcome to Zed" }
+```
+
+**Parameterized term -> compile-time substitution**
+
+```ftl
+-brand-name = { $case } Zed
+about = About { -brand-name(case: "Awesome") }
+```
+
+```rust
+pub fn about() -> &'static str { "About Awesome Zed" }
+```
+
+**Message attributes -> flattened functions**
+
+```ftl
+save =
+    .label = Save
+    .tooltip = Save current file
+```
+
+```rust
+pub fn save__label() -> &'static str { "Save" }
+pub fn save__tooltip() -> &'static str { "Save current file" }
+```
+
+**Inline literals**
+
+```ftl
+msg = { "hello" } world
+count = { 42 }
+```
+
+```rust
+pub fn msg() -> &'static str { "hello world" }
+pub fn count() -> &'static str { "42" }
 ```
 
 ## License
