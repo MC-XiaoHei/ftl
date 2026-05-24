@@ -18,6 +18,31 @@ Test Environment: AMD AI 9 H 365, `cargo bench -p example`.
 - files (select other): ~35 ns
 - get_locale (id match): ~460 ps
 
+## Limitations
+
+Currently, FTL only supports a subset of the Fluent syntax:
+
+**Message patterns**
+
+- ✓ Plain text
+- ✓ `{ $var }` variable reference
+- ✓ `{ $var -> [one] ... *[other] ... }` select expression with CLDR plurals
+- ✗ `{ "str" }`, `{ 42 }`, `{ FUNC() }` — inline literal expressions, will panic
+- ✗ `{ -term }`, `{ message }` — references to terms/messages
+- ✗ `msg.attr = value` — message attributes
+- ✗ `-term_name = value` — term definitions
+- ✗ Fluent built-in functions (`NUMBER()`, `DATETIME()`, etc.)
+
+**Select expressions**
+
+- Select selector must be a variable reference (`{ $var -> ... }`). Other selector types will panic.
+- Select selector is always typed as `usize`. Using string variant keys like `[male]` / `[female]` will fail at compile time — only numeric plural categories (`[one]`, `[few]`, etc.) work correctly.
+
+**Locales**
+
+- Non-primary locales must be a subset of the primary locale's message keys. Extra keys in a secondary locale will panic at build time.
+- Missing messages in secondary locales fall back to the primary locale's content with a comment in generated code — no runtime fallback mechanism.
+
 ## Usage
 
 ```toml
