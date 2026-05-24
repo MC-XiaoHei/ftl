@@ -74,6 +74,18 @@ mod tests {
     }
 
     #[test]
+    fn escape_control_chars_c1() {
+        assert_eq!(escape_str("\u{80}"), "\\u{0080}");
+        assert_eq!(escape_str("\u{9f}"), "\\u{009F}");
+    }
+
+    #[test]
+    fn escape_control_chars_more_c0() {
+        assert_eq!(escape_str("\x01"), "\\u{0001}");
+        assert_eq!(escape_str("\x1f"), "\\u{001F}");
+    }
+
+    #[test]
     fn escape_text_cases() {
         assert_eq!(escape_str("hello"), "hello");
         assert_eq!(escape_str("he\"llo"), "he\\\"llo");

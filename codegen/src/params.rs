@@ -174,6 +174,50 @@ mod tests {
     }
 
     #[test]
+    fn collect_params_interpolation_and_string_selector() {
+        // Variable used as interpolation ({ $x }) AND string selector
+        // merges to SelectorStr → ParamType::Str
+        let elems = [
+            Element::VarRef("x".into()),
+            Element::Select {
+                selector: "x".into(),
+                variants: vec![
+                    Variant {
+                        key: KeyType::Ident("male".into()),
+                        elements: vec![Element::Text("a".into())],
+                        default: false,
+                    },
+                    Variant {
+                        key: KeyType::Ident("other".into()),
+                        elements: vec![Element::Text("b".into())],
+                        default: true,
+                    },
+                ],
+            },
+        ];
+        let map = collect_params_with_context(&elems, "test");
+        assert_eq!(map["x"], ParamType::Str);
+    }
+
+    #[test]
+    fn collect_params_string_selector_then_interpolation() {
+        // Reverse order: SelectorStr first, then Interpolation
+        let elems = [
+            Element::Select {
+                selector: "x".into(),
+                variants: vec![Variant {
+                    key: KeyType::Ident("male".into()),
+                    elements: vec![Element::Text("a".into())],
+                    default: true,
+                }],
+            },
+            Element::VarRef("x".into()),
+        ];
+        let map = collect_params_with_context(&elems, "test");
+        assert_eq!(map["x"], ParamType::Str);
+    }
+
+    #[test]
     #[should_panic(expected = "conflicting inferred types")]
     fn detect_selector_type_conflict() {
         let elems = [
