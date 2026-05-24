@@ -173,7 +173,17 @@ fn gen_select_body(
 
     let mut code = String::new();
     writeln!(code, "    match {} {{", selector).unwrap();
-    for v in variants.iter() {
+    // Emit non-default variants first, then the default (`_`) last.
+    for v in variants.iter().filter(|v| !v.default) {
+        writeln!(
+            code,
+            "        {} => {},",
+            variant_arm_pattern(&v.key, selector_type, locale, v.default),
+            variant_arm_body(&v.elements, params)
+        )
+        .unwrap();
+    }
+    for v in variants.iter().filter(|v| v.default) {
         writeln!(
             code,
             "        {} => {},",
@@ -426,5 +436,30 @@ mod tests {
         assert!(code.contains("match count"));
         assert!(code.contains("1 => \"1 file\".to_string()"));
         assert!(code.contains("_ =>"));
+    }
+
+    #[test]
+    fn generate_string_selector() {
+        let mut params = BTreeMap::new();
+        params.insert("gender".into(), ParamType::Str);
+        let elems = [Element::Select {
+            selector: "gender".into(),
+            variants: vec![
+                Variant {
+                    key: KeyType::Ident("male".into()),
+                    elements: vec![Element::Text("sir".into())],
+                    default: false,
+                },
+                Variant {
+                    key: KeyType::Ident("other".into()),
+                    elements: vec![Element::Text("other".into())],
+                    default: true,
+                },
+            ],
+        }];
+        let code = generate_one_function("greet", &elems, &params, "en");
+        assert!(code.contains("match gender"));
+        assert!(code.contains("\"male\" => \"sir\".to_string()"));
+        assert!(code.contains("_ => \"other\".to_string()"));
     }
 }

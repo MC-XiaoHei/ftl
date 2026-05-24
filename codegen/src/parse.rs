@@ -5,6 +5,7 @@ use std::path::Path;
 
 use fluent_syntax::ast::{self, Entry, Expression, InlineExpression, PatternElement, VariantKey};
 use fluent_syntax::parser;
+use fluent_syntax::parser::ParserError;
 
 use crate::ast::*;
 use crate::diag::{report_diagnostics, Diag, DiagKind};
@@ -72,19 +73,20 @@ impl Generator {
                     continue;
                 }
             };
-            let resource = match parser::parse(source.as_str()) {
-                Ok(r) => r,
-                Err(e) => {
-                    diags.push(Diag::error(
-                        path.to_string_lossy(),
-                        &locale,
-                        "",
-                        format!("parse error: {:?}", e),
-                    ));
-                    continue;
+            let file_display = path.to_string_lossy();
+            match parser::parse(source.as_str()) {
+                Ok(r) => {
+                    locales.insert(locale, Self::extract(&r));
                 }
-            };
-            locales.insert(locale, Self::extract(&resource));
+                Err((partial, errors)) => {
+                    for err in &errors {
+                        diags.push(format_parse_error(&source, &file_display, &locale, err));
+                    }
+                    // If there are any valid entries, still use the partial result
+                    // so that messages/terms that parsed correctly are available.
+                    locales.insert(locale, Self::extract(&partial));
+                }
+            }
         }
         if !locales.contains_key(primary) {
             diags.push(Diag::error(
@@ -278,7 +280,10 @@ impl Generator {
             "    ($key:ident) => {{ $crate::get_locale().$key() }};"
         )
         .unwrap();
-        writeln!(out, "    ($key:ident($($args:expr),* $(,)?)) => {{ $crate::get_locale().$key($($args),*) }};").unwrap();
+        writeln!(
+            out,
+            "    ($key:ident($($args:expr),* $(,)?)) => {{ $crate::get_locale().$key($($args),*) }};"
+        ).unwrap();
         writeln!(out, "}}").unwrap();
         out
     }
@@ -868,5 +873,205 @@ fn convert_inline_expression(expr: &InlineExpression<&str>) -> Element {
             "Unsupported inline expression in term arguments: {:?}",
             other
         ),
+    }
+}
+
+// ---------------------------------------------------------------------------
+//  Diagnostic helpers — produce readable, locatable parse-error output
+// ---------------------------------------------------------------------------
+
+/// Return the 1‑based line number for a byte offset in `source`.
+fn line_of(source: &str, offset: usize) -> usize {
+    source[..offset].chars().filter(|&c| c == '\n').count() + 1
+}
+
+/// Return a Diag that looks like a typical compiler error with location + snippet.
+fn format_parse_error(source: &str, file: &str, locale: &str, error: &ParserError) -> Diag {
+    let line = line_of(source, error.pos.start);
+
+    // Find the start and end of the line containing the error
+    let bol = source[..error.pos.start]
+        .rfind('\n')
+        .map(|p| p + 1)
+        .unwrap_or(0);
+    let eol = source[error.pos.start..]
+        .find('\n')
+        .map(|p| error.pos.start + p)
+        .unwrap_or(source.len());
+    let line_text = &source[bol..eol];
+
+    // Column (1-based) within that line
+    let col = error.pos.start - bol + 1;
+
+    // Truncate if the line is very long
+    let snippet = if line_text.len() > 78 {
+        format!("{}...", &line_text[..75])
+    } else {
+        line_text.to_string()
+    };
+
+    // Underline the error span
+    let underline_len = usize::max(1, error.pos.end.saturating_sub(error.pos.start));
+    let underline = "^".repeat(underline_len);
+
+    // Additional hints for common mistakes
+    let hint = match format!("{}", error).as_str() {
+        msg if msg.contains("Expected a token starting with") => {
+            "\n   = help: FTL comments must start with \"# \" (hash followed by a space)"
+        }
+        _ => "",
+    };
+
+    let message = format!(
+        "\
+{error}
+  --> {file}:{line}:{col}
+   |
+{line:>4} | {snippet}
+   | {underline:>col$}{hint}",
+        error = error,
+        file = file,
+        line = line,
+        col = col,
+        snippet = snippet,
+        underline = underline,
+        hint = hint,
+    );
+
+    Diag::error(file, locale, "", message)
+}
+
+#[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
+mod tests {
+    use super::*;
+
+    // -- fold_text --
+
+    #[test]
+    fn fold_text_merges_adjacent_text() {
+        let elems = vec![
+            Element::Text("Hello ".into()),
+            Element::Text("World".into()),
+            Element::VarRef("x".into()),
+            Element::Text("!".into()),
+        ];
+        let result = fold_text(elems);
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0], Element::Text("Hello World".into()));
+        assert_eq!(result[1], Element::VarRef("x".into()));
+        assert_eq!(result[2], Element::Text("!".into()));
+    }
+
+    #[test]
+    fn fold_text_skips_empty_text() {
+        let elems = vec![Element::Text("".into()), Element::Text("a".into())];
+        let result = fold_text(elems);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], Element::Text("a".into()));
+    }
+
+    #[test]
+    fn fold_text_non_text_passthrough() {
+        let elems = vec![Element::VarRef("x".into())];
+        let result = fold_text(elems);
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn fold_text_empty_input() {
+        let result = fold_text(vec![]);
+        assert!(result.is_empty());
+    }
+
+    // -- ref_prefix --
+
+    #[test]
+    fn ref_prefix_variants() {
+        assert_eq!(ref_prefix(RefKind::Message), "");
+        assert_eq!(ref_prefix(RefKind::Term), "-");
+        assert_eq!(ref_prefix(RefKind::Attribute), ".");
+    }
+
+    // -- flatten_attr_name --
+
+    #[test]
+    fn flatten_attr_name_with_hyphens() {
+        assert_eq!(
+            flatten_attr_name("app-name", "aria-label"),
+            "app-name__aria-label"
+        );
+    }
+
+    #[test]
+    fn flatten_attr_name_simple() {
+        assert_eq!(flatten_attr_name("save", "label"), "save__label");
+    }
+
+    // -- line_of --
+
+    #[test]
+    fn line_of_first_line() {
+        assert_eq!(line_of("hello", 0), 1);
+        assert_eq!(line_of("hello\nworld", 3), 1);
+    }
+
+    #[test]
+    fn line_of_second_line() {
+        assert_eq!(line_of("hello\nworld", 7), 2);
+        assert_eq!(line_of("\n", 1), 2);
+    }
+
+    #[test]
+    fn line_of_empty_source() {
+        assert_eq!(line_of("", 0), 1);
+    }
+
+    // -- format_parse_error --
+
+    #[test]
+    fn format_parse_error_shows_snippet_and_caret() {
+        use fluent_syntax::parser::ParserError;
+        let source = "msg = hello\nbad = { \"\\x\" }\n";
+        // Construct a minimal ParserError (the fields are pub)
+        let err = ParserError {
+            pos: 21..22,
+            slice: Some(20..28),
+            kind: fluent_syntax::parser::ErrorKind::UnknownEscapeSequence("\\x".into()),
+        };
+        let diag = format_parse_error(source, "test.ftl", "en", &err);
+        assert!(diag.message.contains("\\x"));
+        assert!(diag.message.contains("-->"));
+        assert!(diag.message.contains("test.ftl"));
+        assert!(diag.message.contains("^"));
+    }
+
+    #[test]
+    fn format_parse_error_hint_for_comment() {
+        use fluent_syntax::parser::ParserError;
+        let source = "x = 1\n#（bad\n";
+        let err = ParserError {
+            pos: 6..7,
+            slice: Some(5..12),
+            kind: fluent_syntax::parser::ErrorKind::ExpectedToken(' '),
+        };
+        let diag = format_parse_error(source, "f.ftl", "en", &err);
+        assert!(diag.message.contains("help:"));
+        assert!(diag.message.contains("hash"));
+    }
+
+    #[test]
+    fn format_parse_error_truncates_long_line() {
+        use fluent_syntax::parser::ParserError;
+        let long = "x".repeat(100);
+        let source = format!("{}\n", long);
+        // Need a ParserError whose Display is not the hint pattern
+        let err = ParserError {
+            pos: 50..51,
+            slice: None,
+            kind: fluent_syntax::parser::ErrorKind::MissingDefaultVariant,
+        };
+        let diag = format_parse_error(&source, "f.ftl", "en", &err);
+        assert!(diag.message.contains("..."));
     }
 }
