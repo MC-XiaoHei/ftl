@@ -8,7 +8,7 @@ use fluent_syntax::parser;
 
 use crate::ast::*;
 use crate::fmt::{gen_fn_decl, generate_one_function};
-use crate::params::collect_params;
+use crate::params::collect_params_with_context;
 use crate::util::{sanitize, sanitize_const, sanitize_upper};
 
 pub struct Generator {
@@ -229,7 +229,8 @@ impl Generator {
             .map(|k| k.as_str())
             .collect();
         for (name, p_msg) in &primary_entries.messages {
-            let params = collect_params(&p_msg.elements);
+            let params =
+                collect_params_with_context(&p_msg.elements, &format!("message '{}'", p_msg.name));
             if locale_message_keys.contains(name.as_str()) {
                 let msg = locale_entries
                     .messages
@@ -258,7 +259,10 @@ impl Generator {
             }
         }
         for (flat_name, p_attr) in &primary_entries.attributes {
-            let params = collect_params(&p_attr.elements);
+            let params = collect_params_with_context(
+                &p_attr.elements,
+                &format!("attribute '{}.{}'", p_attr.owner, p_attr.name),
+            );
             let fn_name = flatten_attr_name(&p_attr.owner, &p_attr.name);
             if locale_attribute_keys.contains(flat_name.as_str()) {
                 let attr = locale_entries
@@ -294,11 +298,15 @@ impl Generator {
     fn emit_trait(&self, out: &mut String) {
         writeln!(out, "pub trait I18n {{").unwrap();
         for msg in self.locales[&self.primary].messages.values() {
-            let params = collect_params(&msg.elements);
+            let params =
+                collect_params_with_context(&msg.elements, &format!("message '{}'", msg.name));
             writeln!(out, "    fn {};", gen_fn_decl(&msg.name, &params, true)).unwrap();
         }
         for attr in self.locales[&self.primary].attributes.values() {
-            let params = collect_params(&attr.elements);
+            let params = collect_params_with_context(
+                &attr.elements,
+                &format!("attribute '{}.{}'", attr.owner, attr.name),
+            );
             writeln!(
                 out,
                 "    fn {};",
@@ -316,7 +324,8 @@ impl Generator {
         writeln!(out, "pub struct {};", struct_name).unwrap();
         writeln!(out, "impl I18n for {} {{", struct_name).unwrap();
         for msg in self.locales[&self.primary].messages.values() {
-            let params = collect_params(&msg.elements);
+            let params =
+                collect_params_with_context(&msg.elements, &format!("message '{}'", msg.name));
             let args = params
                 .keys()
                 .map(|s| s.as_str())
@@ -327,7 +336,10 @@ impl Generator {
             writeln!(out, "    }}").unwrap();
         }
         for attr in self.locales[&self.primary].attributes.values() {
-            let params = collect_params(&attr.elements);
+            let params = collect_params_with_context(
+                &attr.elements,
+                &format!("attribute '{}.{}'", attr.owner, attr.name),
+            );
             let fn_name = flatten_attr_name(&attr.owner, &attr.name);
             let args = params
                 .keys()
