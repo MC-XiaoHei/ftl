@@ -303,19 +303,41 @@ fn message_attributes_support_refs_and_variable_propagation() {
 }
 
 #[test]
-#[should_panic(expected = "Unsupported expression")]
-fn convert_expression_panics_on_number_literal() {
+fn inline_literal_number_works() {
     use crate::parse::Generator;
     use std::fs;
     use std::path::PathBuf;
 
-    let dir =
-        PathBuf::from(std::env::temp_dir()).join(format!("ftl_test_unsup_{}", std::process::id()));
+    let dir = PathBuf::from(std::env::temp_dir())
+        .join(format!("ftl_test_inline_num_{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join("en-US.ftl"), "x = value { 42 }").unwrap();
 
-    Generator::load(&dir, "en-US");
+    let gen = Generator::load(&dir, "en-US");
+    let code = gen.generate();
+    assert!(code.contains("pub fn x() -> &'static str { \"value 42\" }"));
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn inline_literal_string_works() {
+    use crate::parse::Generator;
+    use std::fs;
+    use std::path::PathBuf;
+
+    let dir = PathBuf::from(std::env::temp_dir())
+        .join(format!("ftl_test_inline_str_{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("en-US.ftl"), "msg = { \"hello\" } world").unwrap();
+
+    let gen = Generator::load(&dir, "en-US");
+    let code = gen.generate();
+    assert!(code.contains("pub fn msg() -> &'static str { \"hello world\" }"));
+
+    let _ = fs::remove_dir_all(&dir);
 }
 
 #[test]

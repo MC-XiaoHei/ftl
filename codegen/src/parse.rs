@@ -742,6 +742,8 @@ fn convert_expression(expr: &Expression<&str>) -> Element {
                     args: args_map,
                 }
             }
+            InlineExpression::StringLiteral { value } => Element::Text(value.to_string()),
+            InlineExpression::NumberLiteral { value } => Element::Text(value.to_string()),
             other => panic!("Unsupported expression: {:?}", other),
         },
         Expression::Select { selector, variants } => {
