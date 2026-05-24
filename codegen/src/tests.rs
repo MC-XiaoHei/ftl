@@ -224,6 +224,85 @@ fn emit_runtime_generates_lang_enum_and_switch() {
 }
 
 #[test]
+fn message_attributes_generate_flattened_functions() {
+    use crate::parse::Generator;
+    use std::fs;
+    use std::path::PathBuf;
+
+    let dir =
+        PathBuf::from(std::env::temp_dir()).join(format!("ftl_test_attrs_{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+
+    fs::write(
+        dir.join("en-US.ftl"),
+        "save =\n    .label = Save\n    .tooltip = Save current file\n",
+    )
+    .unwrap();
+
+    let gen = Generator::load(&dir, "en-US");
+    let code = gen.generate();
+    assert!(code.contains("fn save__label() -> &'static str"));
+    assert!(code.contains("fn save__tooltip() -> &'static str"));
+    assert!(code.contains("pub fn save__label() -> &'static str { \"Save\" }"));
+    assert!(code.contains("pub fn save__tooltip() -> &'static str { \"Save current file\" }"));
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn message_attribute_fallback_uses_primary() {
+    use crate::parse::Generator;
+    use std::fs;
+    use std::path::PathBuf;
+
+    let dir = PathBuf::from(std::env::temp_dir())
+        .join(format!("ftl_test_attr_fb_{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+
+    fs::write(
+        dir.join("en-US.ftl"),
+        "save =\n    .label = Save\n    .tooltip = Save current file\n",
+    )
+    .unwrap();
+    fs::write(dir.join("zh-CN.ftl"), "save =\n    .label = 保存\n").unwrap();
+
+    let gen = Generator::load(&dir, "en-US");
+    let code = gen.generate();
+    assert!(code.contains("attribute 'save.tooltip' missing"));
+    assert!(code.contains("pub fn save__tooltip() -> &'static str { \"Save current file\" }"));
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn message_attributes_support_refs_and_variable_propagation() {
+    use crate::parse::Generator;
+    use std::fs;
+    use std::path::PathBuf;
+
+    let dir = PathBuf::from(std::env::temp_dir())
+        .join(format!("ftl_test_attr_ref_{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+
+    fs::write(
+        dir.join("en-US.ftl"),
+        "product = Zed\nsave =\n    .label = Save { product }\n    .tooltip = Save { $target }\n",
+    )
+    .unwrap();
+
+    let gen = Generator::load(&dir, "en-US");
+    let code = gen.generate();
+    assert!(code.contains("pub fn save__label() -> &'static str { \"Save Zed\" }"));
+    assert!(code.contains("fn save__tooltip(target: &str) -> String"));
+    assert!(code.contains("s.push_str(target);"));
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
 #[should_panic(expected = "Unsupported expression")]
 fn convert_expression_panics_on_number_literal() {
     use crate::parse::Generator;

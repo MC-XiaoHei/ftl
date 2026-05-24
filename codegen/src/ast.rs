@@ -13,9 +13,17 @@ pub struct Term {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Attribute {
+    pub owner: String,
+    pub name: String,
+    pub elements: Vec<Element>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LocaleEntries {
     pub messages: BTreeMap<String, Message>,
     pub terms: BTreeMap<String, Term>,
+    pub attributes: BTreeMap<String, Attribute>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -53,4 +61,5 @@ pub enum ParamType {
 pub enum RefKind {
     Message,
     Term,
+    Attribute,
 }
