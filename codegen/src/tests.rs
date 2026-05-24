@@ -258,3 +258,114 @@ fn convert_expression_panics_on_select_with_number_selector() {
 
     Generator::load(&dir, "en-US");
 }
+
+#[test]
+fn message_reference_is_expanded_at_build_time() {
+    use crate::parse::Generator;
+    use std::fs;
+    use std::path::PathBuf;
+
+    let dir = PathBuf::from(std::env::temp_dir())
+        .join(format!("ftl_test_msg_ref_{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+
+    fs::write(
+        dir.join("en-US.ftl"),
+        "app-name = Zed\nabout = About { app-name }\n",
+    )
+    .unwrap();
+
+    let gen = Generator::load(&dir, "en-US");
+    let code = gen.generate();
+    assert!(code.contains("pub fn about() -> &'static str { \"About Zed\" }"));
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn term_reference_is_expanded_at_build_time() {
+    use crate::parse::Generator;
+    use std::fs;
+    use std::path::PathBuf;
+
+    let dir = PathBuf::from(std::env::temp_dir())
+        .join(format!("ftl_test_term_ref_{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+
+    fs::write(
+        dir.join("en-US.ftl"),
+        "-brand-name = Zed\nwelcome = Welcome to { -brand-name }\n",
+    )
+    .unwrap();
+
+    let gen = Generator::load(&dir, "en-US");
+    let code = gen.generate();
+    assert!(code.contains("pub fn welcome() -> &'static str { \"Welcome to Zed\" }"));
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn free_variables_propagate_through_message_references() {
+    use crate::parse::Generator;
+    use std::fs;
+    use std::path::PathBuf;
+
+    let dir = PathBuf::from(std::env::temp_dir())
+        .join(format!("ftl_test_free_vars_{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+
+    fs::write(
+        dir.join("en-US.ftl"),
+        "name = { $user }\nwelcome = Welcome, { name }!\n",
+    )
+    .unwrap();
+
+    let gen = Generator::load(&dir, "en-US");
+    let code = gen.generate();
+    assert!(code.contains("fn welcome(user: &str) -> String"));
+    assert!(code.contains("s.push_str(user);"));
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+#[should_panic(expected = "Cyclic message reference")]
+fn cyclic_message_reference_panics() {
+    use crate::parse::Generator;
+    use std::fs;
+    use std::path::PathBuf;
+
+    let dir = PathBuf::from(std::env::temp_dir())
+        .join(format!("ftl_test_cycle_msg_{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+
+    fs::write(dir.join("en-US.ftl"), "a = { b }\nb = { a }\n").unwrap();
+
+    Generator::load(&dir, "en-US");
+}
+
+#[test]
+#[should_panic(expected = "Cyclic term reference")]
+fn cyclic_term_reference_panics() {
+    use crate::parse::Generator;
+    use std::fs;
+    use std::path::PathBuf;
+
+    let dir = PathBuf::from(std::env::temp_dir())
+        .join(format!("ftl_test_cycle_term_{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+
+    fs::write(
+        dir.join("en-US.ftl"),
+        "-a = { -b }\n-b = { -a }\nmsg = ok\n",
+    )
+    .unwrap();
+
+    Generator::load(&dir, "en-US");
+}

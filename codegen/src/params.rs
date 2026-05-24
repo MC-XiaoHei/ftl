@@ -1,20 +1,20 @@
 use crate::ast::*;
 use std::collections::BTreeMap;
 
-pub fn collect_params(elements: &[PatternElement]) -> BTreeMap<String, ParamType> {
+pub fn collect_params(elements: &[Element]) -> BTreeMap<String, ParamType> {
     let mut map = BTreeMap::new();
     collect_params_into(elements, &mut map);
     map
 }
 
-fn collect_params_into(elements: &[PatternElement], map: &mut BTreeMap<String, ParamType>) {
+fn collect_params_into(elements: &[Element], map: &mut BTreeMap<String, ParamType>) {
     for e in elements {
         match e {
-            PatternElement::Text(_) => {}
-            PatternElement::VarRef(name) => {
+            Element::Text(_) | Element::MessageRef(_) | Element::TermRef(_) => {}
+            Element::VarRef(name) => {
                 map.entry(name.clone()).or_insert(ParamType::Str);
             }
-            PatternElement::Select { selector, variants } => {
+            Element::Select { selector, variants } => {
                 map.insert(selector.clone(), ParamType::Num);
                 for v in variants {
                     collect_params_into(&v.elements, map);
@@ -32,9 +32,9 @@ mod tests {
     #[test]
     fn collect_params_simple() {
         let elems = [
-            PatternElement::Text("a".into()),
-            PatternElement::VarRef("name".into()),
-            PatternElement::Text("b".into()),
+            Element::Text("a".into()),
+            Element::VarRef("name".into()),
+            Element::Text("b".into()),
         ];
         let map = collect_params(&elems);
         assert_eq!(map.len(), 1);
@@ -44,12 +44,12 @@ mod tests {
     #[test]
     fn collect_params_selector_overrides() {
         let elems = [
-            PatternElement::VarRef("x".into()),
-            PatternElement::Select {
+            Element::VarRef("x".into()),
+            Element::Select {
                 selector: "x".into(),
                 variants: vec![Variant {
                     key: KeyType::Ident("one".into()),
-                    elements: vec![PatternElement::Text("a".into())],
+                    elements: vec![Element::Text("a".into())],
                     default: true,
                 }],
             },

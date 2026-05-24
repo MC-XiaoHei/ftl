@@ -7,7 +7,7 @@ use crate::util::escape_str;
 
 pub fn generate_one_function(
     name: &str,
-    elements: &[PatternElement],
+    elements: &[Element],
     params: &BTreeMap<String, ParamType>,
     locale: &str,
 ) -> String {
@@ -18,7 +18,7 @@ pub fn generate_one_function(
         let text: String = elements
             .iter()
             .filter_map(|e| {
-                if let PatternElement::Text(t) = e {
+                if let Element::Text(t) = e {
                     Some(t.as_str())
                 } else {
                     None
@@ -71,25 +71,21 @@ pub fn gen_fn_decl(name: &str, params: &BTreeMap<String, ParamType>, with_self: 
     out
 }
 
-fn has_select(elements: &[PatternElement]) -> bool {
-    elements
-        .iter()
-        .any(|e| matches!(e, PatternElement::Select { .. }))
+fn has_select(elements: &[Element]) -> bool {
+    elements.iter().any(|e| matches!(e, Element::Select { .. }))
 }
 
-fn is_pure_text(elements: &[PatternElement]) -> bool {
-    elements
-        .iter()
-        .all(|e| matches!(e, PatternElement::Text(_)))
+fn is_pure_text(elements: &[Element]) -> bool {
+    elements.iter().all(|e| matches!(e, Element::Text(_)))
 }
 
-fn capacity_expr(elements: &[PatternElement], params: &BTreeMap<String, ParamType>) -> String {
+fn capacity_expr(elements: &[Element], params: &BTreeMap<String, ParamType>) -> String {
     let mut parts: Vec<String> = Vec::new();
     let mut acc: usize = 0;
     for e in elements {
         match e {
-            PatternElement::Text(t) => acc += t.len(),
-            PatternElement::VarRef(name) => {
+            Element::Text(t) => acc += t.len(),
+            Element::VarRef(name) => {
                 if acc > 0 {
                     parts.push(acc.to_string());
                     acc = 0;
@@ -104,7 +100,8 @@ fn capacity_expr(elements: &[PatternElement], params: &BTreeMap<String, ParamTyp
                     ParamType::Str => format!("{}.len()", name),
                 });
             }
-            PatternElement::Select { .. } => unreachable!(),
+            Element::Select { .. } => unreachable!(),
+            Element::MessageRef(_) | Element::TermRef(_) => unreachable!(),
         }
     }
     if acc > 0 {
@@ -117,17 +114,17 @@ fn capacity_expr(elements: &[PatternElement], params: &BTreeMap<String, ParamTyp
 }
 
 fn emit_push_statements(
-    elements: &[PatternElement],
+    elements: &[Element],
     params: &BTreeMap<String, ParamType>,
     indent: &str,
     code: &mut String,
 ) {
     for e in elements {
         match e {
-            PatternElement::Text(t) => {
+            Element::Text(t) => {
                 writeln!(code, "{}s.push_str(\"{}\");", indent, escape_str(t)).unwrap();
             }
-            PatternElement::VarRef(name) => match params.get(name).unwrap_or(&ParamType::Str) {
+            Element::VarRef(name) => match params.get(name).unwrap_or(&ParamType::Str) {
                 ParamType::Num => {
                     writeln!(
                         code,
@@ -140,12 +137,13 @@ fn emit_push_statements(
                     writeln!(code, "{}s.push_str({});", indent, name).unwrap();
                 }
             },
-            PatternElement::Select { .. } => unreachable!(),
+            Element::Select { .. } => unreachable!(),
+            Element::MessageRef(_) | Element::TermRef(_) => unreachable!(),
         }
     }
 }
 
-fn gen_push_body(elements: &[PatternElement], params: &BTreeMap<String, ParamType>) -> String {
+fn gen_push_body(elements: &[Element], params: &BTreeMap<String, ParamType>) -> String {
     let mut code = String::new();
     writeln!(code, "    let cap = {};", capacity_expr(elements, params)).unwrap();
     writeln!(code, "    let mut s = String::with_capacity(cap);").unwrap();
@@ -155,14 +153,14 @@ fn gen_push_body(elements: &[PatternElement], params: &BTreeMap<String, ParamTyp
 }
 
 fn gen_select_body(
-    elements: &[PatternElement],
+    elements: &[Element],
     params: &BTreeMap<String, ParamType>,
     locale: &str,
 ) -> String {
     let s = elements
         .iter()
         .find_map(|e| {
-            if let PatternElement::Select { selector, variants } = e {
+            if let Element::Select { selector, variants } = e {
                 Some((selector.clone(), variants))
             } else {
                 None
@@ -187,12 +185,12 @@ fn gen_select_body(
     code
 }
 
-fn variant_arm_body(elements: &[PatternElement], params: &BTreeMap<String, ParamType>) -> String {
+fn variant_arm_body(elements: &[Element], params: &BTreeMap<String, ParamType>) -> String {
     if is_pure_text(elements) {
         let text: String = elements
             .iter()
             .filter_map(|e| {
-                if let PatternElement::Text(t) = e {
+                if let Element::Text(t) = e {
                     Some(t.as_str())
                 } else {
                     None
@@ -243,22 +241,22 @@ fn variant_arm_pattern(
 #[cfg_attr(coverage, coverage(off))]
 mod tests {
     use super::*;
-    use crate::ast::{KeyType, ParamType, PatternElement, Variant};
+    use crate::ast::{Element, KeyType, ParamType, Variant};
     use std::collections::BTreeMap;
 
     #[test]
     fn detect_pure_text() {
-        assert!(is_pure_text(&[PatternElement::Text("hello".into())]));
+        assert!(is_pure_text(&[Element::Text("hello".into())]));
         assert!(!is_pure_text(&[
-            PatternElement::Text("a".into()),
-            PatternElement::VarRef("x".into())
+            Element::Text("a".into()),
+            Element::VarRef("x".into())
         ]));
     }
 
     #[test]
     fn detect_has_select() {
-        assert!(!has_select(&[PatternElement::Text("a".into())]));
-        assert!(!has_select(&[PatternElement::VarRef("x".into())]));
+        assert!(!has_select(&[Element::Text("a".into())]));
+        assert!(!has_select(&[Element::VarRef("x".into())]));
     }
 
     #[test]
@@ -293,15 +291,15 @@ mod tests {
     #[test]
     fn capacity_expr_cases() {
         let params = BTreeMap::new();
-        let elems = [PatternElement::Text("Hello".into())];
+        let elems = [Element::Text("Hello".into())];
         assert_eq!(capacity_expr(&elems, &params), "5");
 
-        let elems: [PatternElement; 0] = [];
+        let elems: [Element; 0] = [];
         assert_eq!(capacity_expr(&elems, &params), "0");
 
         let mut params2 = BTreeMap::new();
         params2.insert("n".into(), ParamType::Num);
-        let elems = [PatternElement::VarRef("n".into())];
+        let elems = [Element::VarRef("n".into())];
         assert_eq!(
             capacity_expr(&elems, &params2),
             "if n == 0 { 1 } else { n.ilog10() as usize + 1 }"
@@ -310,9 +308,9 @@ mod tests {
         let mut params3 = BTreeMap::new();
         params3.insert("name".into(), ParamType::Str);
         let elems = [
-            PatternElement::Text("Hello, ".into()),
-            PatternElement::VarRef("name".into()),
-            PatternElement::Text("!".into()),
+            Element::Text("Hello, ".into()),
+            Element::VarRef("name".into()),
+            Element::Text("!".into()),
         ];
         assert_eq!(capacity_expr(&elems, &params3), "7 + name.len() + 1");
 
@@ -320,10 +318,10 @@ mod tests {
         params4.insert("a".into(), ParamType::Str);
         params4.insert("b".into(), ParamType::Num);
         let elems = [
-            PatternElement::Text("x".into()),
-            PatternElement::VarRef("a".into()),
-            PatternElement::Text("yz".into()),
-            PatternElement::VarRef("b".into()),
+            Element::Text("x".into()),
+            Element::VarRef("a".into()),
+            Element::Text("yz".into()),
+            Element::VarRef("b".into()),
         ];
         assert_eq!(
             capacity_expr(&elems, &params4),
@@ -368,7 +366,7 @@ mod tests {
     #[test]
     fn generate_function_cases() {
         let params = BTreeMap::new();
-        let elems = [PatternElement::Text("Settings".into())];
+        let elems = [Element::Text("Settings".into())];
         let code = generate_one_function("settings", &elems, &params, "en");
         assert_eq!(
             code.trim(),
@@ -376,16 +374,16 @@ mod tests {
         );
 
         let params = BTreeMap::new();
-        let elems = [PatternElement::Text("he\"llo\nworld".into())];
+        let elems = [Element::Text("he\"llo\nworld".into())];
         let code = generate_one_function("test", &elems, &params, "en");
         assert!(code.contains("he\\\"llo\\nworld"));
 
         let mut params = BTreeMap::new();
         params.insert("name".into(), ParamType::Str);
         let elems = [
-            PatternElement::Text("Hello, ".into()),
-            PatternElement::VarRef("name".into()),
-            PatternElement::Text("!".into()),
+            Element::Text("Hello, ".into()),
+            Element::VarRef("name".into()),
+            Element::Text("!".into()),
         ];
         let code = generate_one_function("hello", &elems, &params, "en");
         assert!(code.starts_with("pub fn hello(name: &str) -> String {"));
@@ -395,8 +393,8 @@ mod tests {
         let mut params = BTreeMap::new();
         params.insert("count".into(), ParamType::Num);
         let elems = [
-            PatternElement::Text("count: ".into()),
-            PatternElement::VarRef("count".into()),
+            Element::Text("count: ".into()),
+            Element::VarRef("count".into()),
         ];
         let code = generate_one_function("show_count", &elems, &params, "en");
         assert!(code.contains("count: usize"));
@@ -404,19 +402,19 @@ mod tests {
 
         let mut params = BTreeMap::new();
         params.insert("count".into(), ParamType::Num);
-        let elems = [PatternElement::Select {
+        let elems = [Element::Select {
             selector: "count".into(),
             variants: vec![
                 Variant {
                     key: KeyType::Ident("one".into()),
-                    elements: vec![PatternElement::Text("1 file".into())],
+                    elements: vec![Element::Text("1 file".into())],
                     default: false,
                 },
                 Variant {
                     key: KeyType::Ident("other".into()),
                     elements: vec![
-                        PatternElement::VarRef("count".into()),
-                        PatternElement::Text(" files".into()),
+                        Element::VarRef("count".into()),
+                        Element::Text(" files".into()),
                     ],
                     default: true,
                 },
