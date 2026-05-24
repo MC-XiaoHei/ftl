@@ -25,7 +25,12 @@ impl Generator {
             if path.extension().and_then(|s| s.to_str()) != Some("ftl") {
                 continue;
             }
-            let locale = path.file_stem().expect("file has no stem").to_str().expect("filename is not UTF-8").to_string();
+            let locale = path
+                .file_stem()
+                .expect("file has no stem")
+                .to_str()
+                .expect("filename is not UTF-8")
+                .to_string();
             let source = fs::read_to_string(&path)
                 .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
             let resource = parser::parse(source.as_str())
@@ -107,6 +112,7 @@ impl Generator {
     fn emit_module(&self, locale: &str, out: &mut String) {
         let mod_name = sanitize(locale);
         writeln!(out, "pub mod {} {{", mod_name).unwrap();
+        writeln!(out, "    use std::fmt::Write;").unwrap();
 
         let msgs = &self.locales[locale];
         let primary_msgs = &self.locales[&self.primary];
@@ -115,7 +121,10 @@ impl Generator {
         for p_msg in primary_msgs {
             let params = collect_params(&p_msg.elements);
             if locale_keys.contains(p_msg.name.as_str()) {
-                let msg = msgs.iter().find(|m| m.name == p_msg.name).expect("message missing from locale");
+                let msg = msgs
+                    .iter()
+                    .find(|m| m.name == p_msg.name)
+                    .expect("message missing from locale");
                 let code = generate_one_function(&msg.name, &msg.elements, &params, locale);
                 writeln!(out, "{}", code.trim_end()).unwrap();
             } else {

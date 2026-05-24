@@ -95,7 +95,12 @@ fn capacity_expr(elements: &[PatternElement], params: &BTreeMap<String, ParamTyp
                     acc = 0;
                 }
                 parts.push(match params.get(name).unwrap_or(&ParamType::Str) {
-                    ParamType::Num => format!("{}.to_string().len()", name),
+                    ParamType::Num => {
+                        format!(
+                            "if {n} == 0 {{ 1 }} else {{ {n}.ilog10() as usize + 1 }}",
+                            n = name
+                        )
+                    }
                     ParamType::Str => format!("{}.len()", name),
                 });
             }
@@ -124,7 +129,12 @@ fn emit_push_statements(
             }
             PatternElement::VarRef(name) => match params.get(name).unwrap_or(&ParamType::Str) {
                 ParamType::Num => {
-                    writeln!(code, "{}s.push_str(&{}.to_string());", indent, name).unwrap();
+                    writeln!(
+                        code,
+                        "{}write!(&mut s, \"{{}}\", {}).unwrap();",
+                        indent, name
+                    )
+                    .unwrap();
                 }
                 ParamType::Str => {
                     writeln!(code, "{}s.push_str({});", indent, name).unwrap();
@@ -292,7 +302,10 @@ mod tests {
         let mut params2 = BTreeMap::new();
         params2.insert("n".into(), ParamType::Num);
         let elems = [PatternElement::VarRef("n".into())];
-        assert_eq!(capacity_expr(&elems, &params2), "n.to_string().len()");
+        assert_eq!(
+            capacity_expr(&elems, &params2),
+            "if n == 0 { 1 } else { n.ilog10() as usize + 1 }"
+        );
 
         let mut params3 = BTreeMap::new();
         params3.insert("name".into(), ParamType::Str);
@@ -314,7 +327,7 @@ mod tests {
         ];
         assert_eq!(
             capacity_expr(&elems, &params4),
-            "1 + a.len() + 2 + b.to_string().len()"
+            "1 + a.len() + 2 + if b == 0 { 1 } else { b.ilog10() as usize + 1 }"
         );
     }
 
@@ -387,7 +400,7 @@ mod tests {
         ];
         let code = generate_one_function("show_count", &elems, &params, "en");
         assert!(code.contains("count: usize"));
-        assert!(code.contains("s.push_str(&count.to_string());"));
+        assert!(code.contains("write!(&mut s, \"{}\", count).unwrap();"));
 
         let mut params = BTreeMap::new();
         params.insert("count".into(), ParamType::Num);

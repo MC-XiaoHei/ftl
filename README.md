@@ -15,7 +15,7 @@ Test Environment: AMD AI 9 H 365, `cargo bench -p example`.
 - hello (short &str): ~35 ns
 - hello (long &str): ~35 ns
 - files (select one): ~25 ns
-- files (select other): ~60 ns
+- files (select other): ~35 ns
 - get_locale (id match): ~460 ps
 
 ## Usage
@@ -92,9 +92,9 @@ pub fn files(count: usize) -> String {
     match count {
         1 => "1 file".to_string(),
         _ => {
-            let cap = count.to_string().len() + 6;
+            let cap = if count == 0 { 1 } else { count.ilog10() as usize + 1 } + 6;
             let mut s = String::with_capacity(cap);
-            s.push_str(&count.to_string());
+            write!(&mut s, "{}", count).unwrap();
             s.push_str(" files");
             s
         }
