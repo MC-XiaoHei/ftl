@@ -7,6 +7,7 @@ use fluent_syntax::ast::{self, Entry, Expression, InlineExpression, PatternEleme
 use fluent_syntax::parser;
 
 use crate::ast::*;
+use crate::diag::{report_diagnostics, Diag, DiagKind};
 use crate::fmt::{gen_fn_decl, generate_one_function};
 use crate::params::collect_params_with_context;
 use crate::util::{sanitize, sanitize_const, sanitize_upper};
@@ -14,6 +15,9 @@ use crate::util::{sanitize, sanitize_const, sanitize_upper};
 pub struct Generator {
     pub primary: String,
     pub locales: BTreeMap<String, LocaleEntries>,
+    pub diags: Vec<Diag>,
+    #[allow(dead_code)]
+    file_map: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -24,6 +28,8 @@ enum VisitState {
 
 struct Resolver<'a> {
     locale: &'a str,
+    #[allow(dead_code)]
+    file: &'a str,
     entries: &'a LocaleEntries,
     messages: BTreeMap<String, Message>,
     terms: BTreeMap<String, Term>,
@@ -37,6 +43,8 @@ struct Resolver<'a> {
 
 impl Generator {
     pub fn load(dir: &Path, primary: &str) -> Self {
+        let mut diags = Vec::new();
+        let mut file_map = BTreeMap::new();
         let mut locales = BTreeMap::new();
         for entry in fs::read_dir(dir).expect("Cannot read locales directory") {
             let entry = entry.expect("invalid directory entry");
@@ -50,19 +58,49 @@ impl Generator {
                 .to_str()
                 .expect("filename is not UTF-8")
                 .to_string();
-            let source = fs::read_to_string(&path)
-                .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
-            let resource = parser::parse(source.as_str())
-                .unwrap_or_else(|e| panic!("Parse error in {}: {:?}", path.display(), e));
+            let file_path = path.to_string_lossy().to_string();
+            file_map.insert(locale.clone(), file_path);
+            let source = match fs::read_to_string(&path) {
+                Ok(s) => s,
+                Err(e) => {
+                    diags.push(Diag::error(
+                        path.to_string_lossy(),
+                        &locale,
+                        "",
+                        format!("cannot read file: {}", e),
+                    ));
+                    continue;
+                }
+            };
+            let resource = match parser::parse(source.as_str()) {
+                Ok(r) => r,
+                Err(e) => {
+                    diags.push(Diag::error(
+                        path.to_string_lossy(),
+                        &locale,
+                        "",
+                        format!("parse error: {:?}", e),
+                    ));
+                    continue;
+                }
+            };
             locales.insert(locale, Self::extract(&resource));
         }
-        assert!(
-            locales.contains_key(primary),
-            "Primary locale '{}' not found",
-            primary
-        );
-
-        let primary_entries = &locales[primary];
+        if !locales.contains_key(primary) {
+            diags.push(Diag::error(
+                "",
+                primary,
+                "",
+                format!("primary locale '{}' not found", primary),
+            ));
+        }
+        let primary_entries = match locales.get(primary) {
+            Some(e) => e,
+            None => {
+                report_diagnostics(&diags);
+                unreachable!()
+            }
+        };
         let primary_message_keys: BTreeSet<&str> = primary_entries
             .messages
             .keys()
@@ -82,34 +120,62 @@ impl Generator {
             }
             let locale_message_keys: BTreeSet<&str> =
                 entries.messages.keys().map(|k| k.as_str()).collect();
-            let extra_messages: Vec<&&str> = locale_message_keys
+            let extra_msgs: Vec<&&str> = locale_message_keys
                 .difference(&primary_message_keys)
                 .collect();
-            if !extra_messages.is_empty() {
-                panic!("Locale '{}' has extra messages: {:?}", name, extra_messages);
+            if !extra_msgs.is_empty() {
+                diags.push(Diag::error(
+                    file_map.get(name).cloned().unwrap_or_default(),
+                    name,
+                    "",
+                    format!(
+                        "has extra messages not present in primary locale '{}': {:?}",
+                        primary, extra_msgs
+                    ),
+                ));
             }
             let locale_term_keys: BTreeSet<&str> =
                 entries.terms.keys().map(|k| k.as_str()).collect();
             let extra_terms: Vec<&&str> = locale_term_keys.difference(&primary_term_keys).collect();
             if !extra_terms.is_empty() {
-                panic!("Locale '{}' has extra terms: {:?}", name, extra_terms);
+                diags.push(Diag::error(
+                    file_map.get(name).cloned().unwrap_or_default(),
+                    name,
+                    "",
+                    format!(
+                        "has extra terms not present in primary locale '{}': {:?}",
+                        primary, extra_terms
+                    ),
+                ));
             }
-            let locale_attribute_keys: BTreeSet<&str> =
+            let locale_attr_keys: BTreeSet<&str> =
                 entries.attributes.keys().map(|k| k.as_str()).collect();
-            let extra_attributes: Vec<&&str> = locale_attribute_keys
+            let extra_attrs: Vec<&&str> = locale_attr_keys
                 .difference(&primary_attribute_keys)
                 .collect();
-            if !extra_attributes.is_empty() {
-                panic!(
-                    "Locale '{}' has extra attributes: {:?}",
-                    name, extra_attributes
-                );
+            if !extra_attrs.is_empty() {
+                diags.push(Diag::error(
+                    file_map.get(name).cloned().unwrap_or_default(),
+                    name,
+                    "",
+                    format!(
+                        "has extra attributes not present in primary locale '{}': {:?}",
+                        primary, extra_attrs
+                    ),
+                ));
             }
+        }
+        if diags.iter().any(|d| d.kind == DiagKind::Error) {
+            report_diagnostics(&diags);
         }
 
         let mut resolved_locales = BTreeMap::new();
         for (locale, entries) in locales {
-            let mut resolver = Resolver::new(&locale, &entries);
+            let mut resolver = Resolver::new(
+                &locale,
+                file_map.get(&locale).map(|s| s.as_str()).unwrap_or(""),
+                &entries,
+            );
             let messages = resolver.resolve_all_messages();
             let terms = resolver.resolve_all_terms();
             let attributes = resolver.resolve_all_attributes();
@@ -125,6 +191,8 @@ impl Generator {
         Generator {
             primary: primary.to_string(),
             locales: resolved_locales,
+            diags,
+            file_map,
         }
     }
 
@@ -219,23 +287,15 @@ impl Generator {
         let mod_name = sanitize(locale);
         writeln!(out, "pub mod {} {{", mod_name).unwrap();
         writeln!(out, "    use std::fmt::Write;").unwrap();
-        let locale_entries = &self.locales[locale];
-        let primary_entries = &self.locales[&self.primary];
-        let locale_message_keys: BTreeSet<&str> =
-            locale_entries.messages.keys().map(|k| k.as_str()).collect();
-        let locale_attribute_keys: BTreeSet<&str> = locale_entries
-            .attributes
-            .keys()
-            .map(|k| k.as_str())
-            .collect();
-        for (name, p_msg) in &primary_entries.messages {
+        let le = &self.locales[locale];
+        let pe = &self.locales[&self.primary];
+        let lmsg: BTreeSet<&str> = le.messages.keys().map(|k| k.as_str()).collect();
+        let lattr: BTreeSet<&str> = le.attributes.keys().map(|k| k.as_str()).collect();
+        for (name, p_msg) in &pe.messages {
             let params =
                 collect_params_with_context(&p_msg.elements, &format!("message '{}'", p_msg.name));
-            if locale_message_keys.contains(name.as_str()) {
-                let msg = locale_entries
-                    .messages
-                    .get(name)
-                    .expect("message missing from locale");
+            if lmsg.contains(name.as_str()) {
+                let msg = le.messages.get(name).expect("message missing from locale");
                 writeln!(
                     out,
                     "{}",
@@ -258,16 +318,16 @@ impl Generator {
                 .unwrap();
             }
         }
-        for (flat_name, p_attr) in &primary_entries.attributes {
+        for (flat, p_attr) in &pe.attributes {
             let params = collect_params_with_context(
                 &p_attr.elements,
                 &format!("attribute '{}.{}'", p_attr.owner, p_attr.name),
             );
             let fn_name = flatten_attr_name(&p_attr.owner, &p_attr.name);
-            if locale_attribute_keys.contains(flat_name.as_str()) {
-                let attr = locale_entries
+            if lattr.contains(flat.as_str()) {
+                let attr = le
                     .attributes
-                    .get(flat_name)
+                    .get(flat)
                     .expect("attribute missing from locale");
                 writeln!(
                     out,
@@ -298,9 +358,16 @@ impl Generator {
     fn emit_trait(&self, out: &mut String) {
         writeln!(out, "pub trait I18n {{").unwrap();
         for msg in self.locales[&self.primary].messages.values() {
-            let params =
-                collect_params_with_context(&msg.elements, &format!("message '{}'", msg.name));
-            writeln!(out, "    fn {};", gen_fn_decl(&msg.name, &params, true)).unwrap();
+            writeln!(
+                out,
+                "    fn {};",
+                gen_fn_decl(
+                    &msg.name,
+                    &collect_params_with_context(&msg.elements, &format!("message '{}'", msg.name)),
+                    true
+                )
+            )
+            .unwrap();
         }
         for attr in self.locales[&self.primary].attributes.values() {
             let params = collect_params_with_context(
@@ -319,20 +386,16 @@ impl Generator {
     }
 
     fn emit_impl(&self, locale: &str, out: &mut String) {
-        let struct_name = sanitize_upper(locale);
-        let mod_name = sanitize(locale);
-        writeln!(out, "pub struct {};", struct_name).unwrap();
-        writeln!(out, "impl I18n for {} {{", struct_name).unwrap();
+        let sn = sanitize_upper(locale);
+        let mn = sanitize(locale);
+        writeln!(out, "pub struct {};", sn).unwrap();
+        writeln!(out, "impl I18n for {} {{", sn).unwrap();
         for msg in self.locales[&self.primary].messages.values() {
             let params =
                 collect_params_with_context(&msg.elements, &format!("message '{}'", msg.name));
-            let args = params
-                .keys()
-                .map(|s| s.as_str())
-                .collect::<Vec<_>>()
-                .join(", ");
+            let args: Vec<&str> = params.keys().map(|s| s.as_str()).collect();
             writeln!(out, "    fn {} {{", gen_fn_decl(&msg.name, &params, true)).unwrap();
-            writeln!(out, "        {}::{}({})", mod_name, msg.name, args).unwrap();
+            writeln!(out, "        {}::{}({})", mn, msg.name, args.join(", ")).unwrap();
             writeln!(out, "    }}").unwrap();
         }
         for attr in self.locales[&self.primary].attributes.values() {
@@ -341,13 +404,9 @@ impl Generator {
                 &format!("attribute '{}.{}'", attr.owner, attr.name),
             );
             let fn_name = flatten_attr_name(&attr.owner, &attr.name);
-            let args = params
-                .keys()
-                .map(|s| s.as_str())
-                .collect::<Vec<_>>()
-                .join(", ");
+            let args: Vec<&str> = params.keys().map(|s| s.as_str()).collect();
             writeln!(out, "    fn {} {{", gen_fn_decl(&fn_name, &params, true)).unwrap();
-            writeln!(out, "        {}::{}({})", mod_name, fn_name, args).unwrap();
+            writeln!(out, "        {}::{}({})", mn, fn_name, args.join(", ")).unwrap();
             writeln!(out, "    }}").unwrap();
         }
         writeln!(out, "}}").unwrap();
@@ -356,8 +415,8 @@ impl Generator {
             out,
             "pub const {}: {} = {};",
             sanitize_const(locale),
-            struct_name,
-            struct_name
+            sn,
+            sn
         )
         .unwrap();
         writeln!(out).unwrap();
@@ -399,9 +458,10 @@ impl Generator {
 }
 
 impl<'a> Resolver<'a> {
-    fn new(locale: &'a str, entries: &'a LocaleEntries) -> Self {
+    fn new(locale: &'a str, file: &'a str, entries: &'a LocaleEntries) -> Self {
         Self {
             locale,
+            file,
             entries,
             messages: BTreeMap::new(),
             terms: BTreeMap::new(),
@@ -413,7 +473,6 @@ impl<'a> Resolver<'a> {
             env_stack: Vec::new(),
         }
     }
-
     fn resolve_all_messages(&mut self) -> BTreeMap<String, Message> {
         let names: Vec<String> = self.entries.messages.keys().cloned().collect();
         for name in names {
@@ -421,7 +480,6 @@ impl<'a> Resolver<'a> {
         }
         self.messages.clone()
     }
-
     fn resolve_all_terms(&mut self) -> BTreeMap<String, Term> {
         let names: Vec<String> = self.entries.terms.keys().cloned().collect();
         for name in names {
@@ -429,7 +487,6 @@ impl<'a> Resolver<'a> {
         }
         self.terms.clone()
     }
-
     fn resolve_all_attributes(&mut self) -> BTreeMap<String, Attribute> {
         let names: Vec<String> = self.entries.attributes.keys().cloned().collect();
         for name in names {
@@ -437,7 +494,6 @@ impl<'a> Resolver<'a> {
         }
         self.attributes.clone()
     }
-
     fn resolve_message(&mut self, name: &str) -> Message {
         if let Some(msg) = self.messages.get(name) {
             return msg.clone();
@@ -459,8 +515,8 @@ impl<'a> Resolver<'a> {
             .get(name)
             .unwrap_or_else(|| {
                 panic!(
-                    "Undefined message reference '{}' in locale '{}'",
-                    name, self.locale
+                    "{}: [{}] undefined message reference '{}'",
+                    self.file, self.locale, name
                 )
             })
             .clone();
@@ -478,7 +534,6 @@ impl<'a> Resolver<'a> {
         self.messages.insert(name.to_string(), resolved.clone());
         resolved
     }
-
     fn resolve_term(&mut self, name: &str) -> Term {
         if let Some(term) = self.terms.get(name) {
             return term.clone();
@@ -500,8 +555,8 @@ impl<'a> Resolver<'a> {
             .get(name)
             .unwrap_or_else(|| {
                 panic!(
-                    "Undefined term reference '-{}' in locale '{}'",
-                    name, self.locale
+                    "{}: [{}] undefined term reference '-{}'",
+                    self.file, self.locale, name
                 )
             })
             .clone();
@@ -518,7 +573,6 @@ impl<'a> Resolver<'a> {
         self.terms.insert(name.to_string(), resolved.clone());
         resolved
     }
-
     fn resolve_attribute(&mut self, name: &str) -> Attribute {
         if let Some(attr) = self.attributes.get(name) {
             return attr.clone();
@@ -540,8 +594,8 @@ impl<'a> Resolver<'a> {
             .get(name)
             .unwrap_or_else(|| {
                 panic!(
-                    "Undefined attribute reference '.{}' in locale '{}'",
-                    name, self.locale
+                    "{}: [{}] undefined attribute reference '.{}'",
+                    self.file, self.locale, name
                 )
             })
             .clone();
@@ -560,7 +614,6 @@ impl<'a> Resolver<'a> {
         self.attributes.insert(name.to_string(), resolved.clone());
         resolved
     }
-
     fn resolve_elements(&mut self, elements: &[Element]) -> Vec<Element> {
         let mut out = Vec::new();
         for element in elements {
@@ -574,43 +627,41 @@ impl<'a> Resolver<'a> {
                     }
                 }
                 Element::MessageRef(name) => {
-                    let resolved = self.resolve_message(name);
-                    out.extend(resolved.elements.clone());
+                    let r = self.resolve_message(name);
+                    out.extend(r.elements.clone());
                 }
                 Element::TermRef { name, args } => {
                     let bindings = args
                         .iter()
-                        .map(|(key, value)| (key.clone(), self.resolve_argument_value(value)))
+                        .map(|(k, v)| (k.clone(), self.resolve_argument_value(v)))
                         .collect::<BTreeMap<_, _>>();
-                    let resolved = self.resolve_term_with_args(name, bindings);
-                    out.extend(resolved.elements.clone());
+                    let r = self.resolve_term_with_args(name, bindings);
+                    out.extend(r.elements.clone());
                 }
                 Element::Select { selector, variants } => {
-                    let variants = variants
+                    let vs = variants
                         .iter()
-                        .map(|variant| Variant {
-                            key: variant.key.clone(),
-                            elements: fold_text(self.resolve_elements(&variant.elements)),
-                            default: variant.default,
+                        .map(|v| Variant {
+                            key: v.key.clone(),
+                            elements: fold_text(self.resolve_elements(&v.elements)),
+                            default: v.default,
                         })
                         .collect();
                     out.push(Element::Select {
                         selector: selector.clone(),
-                        variants,
+                        variants: vs,
                     });
                 }
             }
         }
         fold_text(out)
     }
-
     fn resolve_term_with_args(&mut self, name: &str, args: BTreeMap<String, Element>) -> Term {
         self.env_stack.push(args);
-        let resolved = self.resolve_term(name);
+        let r = self.resolve_term(name);
         self.env_stack.pop();
-        resolved
+        r
     }
-
     fn resolve_argument_value(&mut self, value: &Element) -> Element {
         match value {
             Element::Text(text) => Element::Text(text.clone()),
@@ -618,57 +669,56 @@ impl<'a> Resolver<'a> {
                 .lookup_bound_var(name)
                 .unwrap_or_else(|| Element::VarRef(name.clone())),
             Element::MessageRef(name) => {
-                let resolved = self.resolve_message(name);
-                if resolved.elements.len() == 1 {
-                    resolved.elements[0].clone()
+                let r = self.resolve_message(name);
+                if r.elements.len() == 1 {
+                    r.elements[0].clone()
                 } else {
                     panic!(
-                        "Term argument '{}' in locale '{}' must resolve to a single element",
-                        name, self.locale
+                        "{}: [{}] term argument '{}' must resolve to a single element",
+                        self.file, self.locale, name
                     );
                 }
             }
             Element::TermRef { name, args } => {
                 let bindings = args
                     .iter()
-                    .map(|(key, value)| (key.clone(), self.resolve_argument_value(value)))
+                    .map(|(k, v)| (k.clone(), self.resolve_argument_value(v)))
                     .collect::<BTreeMap<_, _>>();
-                let resolved = self.resolve_term_with_args(name, bindings);
-                if resolved.elements.len() == 1 {
-                    resolved.elements[0].clone()
+                let r = self.resolve_term_with_args(name, bindings);
+                if r.elements.len() == 1 {
+                    r.elements[0].clone()
                 } else {
                     panic!(
-                        "Parameterized term '-{}' in locale '{}' must resolve to a single element",
-                        name, self.locale
+                        "{}: [{}] parameterized term '-{}' must resolve to a single element",
+                        self.file, self.locale, name
                     );
                 }
             }
             Element::Select { .. } => panic!("Term argument cannot be a select expression"),
         }
     }
-
     fn lookup_bound_var(&self, name: &str) -> Option<Element> {
         self.env_stack
             .iter()
             .rev()
             .find_map(|scope| scope.get(name).cloned())
     }
-
     fn cycle_panic(&self, ref_kind: RefKind, name: &str) -> ! {
         let mut chain = self
             .stack
             .iter()
-            .map(|(kind, entry)| format!("{}{}", ref_prefix(*kind), entry))
+            .map(|(k, e)| format!("{}{}", ref_prefix(*k), e))
             .collect::<Vec<_>>();
         chain.push(format!("{}{}", ref_prefix(ref_kind), name));
         panic!(
-            "Cyclic {} reference in locale '{}': {}",
+            "{}: [{}] cyclic {} reference: {}",
+            self.file,
+            self.locale,
             match ref_kind {
                 RefKind::Message => "message",
                 RefKind::Term => "term",
                 RefKind::Attribute => "attribute",
             },
-            self.locale,
             chain.join(" -> ")
         );
     }
@@ -698,7 +748,6 @@ fn ref_prefix(kind: RefKind) -> &'static str {
         RefKind::Attribute => ".",
     }
 }
-
 fn flatten_attr_name(owner: &str, name: &str) -> String {
     format!("{}__{}", owner, name)
 }
@@ -706,7 +755,6 @@ fn flatten_attr_name(owner: &str, name: &str) -> String {
 fn convert_elements(elems: &[PatternElement<&str>]) -> Vec<Element> {
     elems.iter().map(convert_element).collect()
 }
-
 fn convert_element(e: &PatternElement<&str>) -> Element {
     match e {
         PatternElement::TextElement { value } => Element::Text(value.to_string()),

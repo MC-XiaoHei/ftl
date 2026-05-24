@@ -68,7 +68,7 @@ fn generator_with_select_plural() {
 }
 
 #[test]
-#[should_panic(expected = "Primary locale 'xx' not found")]
+#[should_panic(expected = "1 error(s)")]
 fn generator_panics_when_primary_missing() {
     use crate::parse::Generator;
     use std::fs;
@@ -84,7 +84,7 @@ fn generator_panics_when_primary_missing() {
 }
 
 #[test]
-#[should_panic(expected = "has extra messages")]
+#[should_panic(expected = "1 error(s)")]
 fn generator_panics_on_extra_keys() {
     use crate::parse::Generator;
     use std::fs;
@@ -458,7 +458,7 @@ fn free_variables_propagate_through_message_references() {
 }
 
 #[test]
-#[should_panic(expected = "Cyclic message reference")]
+#[should_panic(expected = "cyclic message reference")]
 fn cyclic_message_reference_panics() {
     use crate::parse::Generator;
     use std::fs;
@@ -475,7 +475,7 @@ fn cyclic_message_reference_panics() {
 }
 
 #[test]
-#[should_panic(expected = "Cyclic term reference")]
+#[should_panic(expected = "cyclic term reference")]
 fn cyclic_term_reference_panics() {
     use crate::parse::Generator;
     use std::fs;

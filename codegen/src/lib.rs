@@ -1,6 +1,7 @@
 #![cfg_attr(coverage, feature(coverage_attribute))]
 
 mod ast;
+pub mod diag;
 mod fmt;
 mod params;
 mod plural;
