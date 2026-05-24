@@ -11,30 +11,33 @@ Compile-time conversion of Fluent (.ftl) translation files to type-safe Rust fun
 
 Test Environment: AMD AI 9 H 365, `cargo bench -p example`.
 
-- settings (pure text): ~460 ps
-- hello (short &str): ~35 ns
-- hello (long &str): ~35 ns
-- files (select one): ~25 ns
-- files (select other): ~35 ns
-- get_locale (id match): ~460 ps
+- pure text: <500 ps
+- get locale: <500 ps
+- translate: <50 ns
+
+Translations are resolved entirely at compile time — runtime cost is just a function call, no parsing, no hash lookups.
 
 ## Limitations
 
-Currently, FTL only supports a subset of the Fluent syntax:
+A full walkthrough of supported and unsupported FTL syntax is available in
+the example locale files:
 
-**Message patterns**
+- [`locales/en-US.ftl`](example/locales/en-US.ftl)
+- [`locales/zh-CN.ftl`](example/locales/zh-CN.ftl)
+- [`locales/ja-JP.ftl`](example/locales/ja-JP.ftl)
 
-- ✓ Plain text
-- ✓ `{ $var }` variable reference
-- ✓ `{ $var -> [one] ... *[other] ... }` select expression with CLDR plurals
-- ✓ `{ $var -> [male] ... *[other] ... }` string select
-- ✓ `{ "str" }` / `{ 42 }` inline literal expressions
-- ✓ `{ -term }` / `{ message }` references to terms/messages
-- ✓ `msg.attr = value` message attributes
-- ✓ `-term_name = value` term definitions
-- ✓ Named term arguments
-- ✗ Positional term arguments
-- ✗ Fluent built-in functions (`NUMBER()`, `DATETIME()`, etc.)
+Unsupported features are commented out with explanations.
+
+Currently, only a subset of Fluent syntax is supported (see example `.ftl` files
+for a full walkthrough).  Unsupported features:
+
+- Fluent built-in functions (`NUMBER()`, `DATETIME()`, etc.)
+- Positional term arguments
+- Partially-formatted variables (`FluentDateTime` / `FluentNumber`)
+- Function calls as selectors
+- Term attribute references (`-term.attr`)
+- Non-variable selectors (e.g. `{ 42 -> ... }`)
+- Ordinal plural via `NUMBER(…, type: "ordinal")`
 
 **Select expressions**
 
@@ -84,10 +87,14 @@ fn main() {
 
 ```fluent
 hello_world = Hello, World!
+msg = { "hello" } world
+count = { 42 }
 ```
 
 ```rust
 pub fn hello_world() -> &'static str { "Hello, World!" }
+pub fn msg() -> &'static str { "hello world" }
+pub fn count() -> &'static str { "42" }
 ```
 
 **Variable interpolation -> Pre-allocated `String`**
@@ -231,18 +238,6 @@ save =
 ```rust
 pub fn save__label() -> &'static str { "Save" }
 pub fn save__tooltip() -> &'static str { "Save current file" }
-```
-
-**Inline literals**
-
-```fluent
-msg = { "hello" } world
-count = { 42 }
-```
-
-```rust
-pub fn msg() -> &'static str { "hello world" }
-pub fn count() -> &'static str { "42" }
 ```
 
 ## License
