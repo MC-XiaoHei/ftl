@@ -31,6 +31,10 @@ pub enum Element {
     Text(String),
     VarRef(String),
     MessageRef(String),
+    AttributeRef {
+        owner: String,
+        name: String,
+    },
     TermRef {
         name: String,
         args: BTreeMap<String, Element>,

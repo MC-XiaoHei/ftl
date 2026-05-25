@@ -400,7 +400,7 @@ impl Generator {
         for msg in self.locales[&self.primary].messages.values() {
             let params =
                 collect_params_with_context(&msg.elements, &format!("message '{}'", msg.name));
-            let args: Vec<&str> = params.keys().map(|s| s.as_str()).collect();
+            let args: Vec<String> = params.keys().map(|s| sanitize(s)).collect();
             writeln!(out, "    fn {} {{", gen_fn_decl(&msg.name, &params, true)).unwrap();
             writeln!(
                 out,
@@ -418,7 +418,7 @@ impl Generator {
                 &format!("attribute '{}.{}'", attr.owner, attr.name),
             );
             let fn_name = flatten_attr_name(&attr.owner, &attr.name);
-            let args: Vec<&str> = params.keys().map(|s| s.as_str()).collect();
+            let args: Vec<String> = params.keys().map(|s| sanitize(s)).collect();
             writeln!(out, "    fn {} {{", gen_fn_decl(&fn_name, &params, true)).unwrap();
             writeln!(
                 out,
@@ -651,6 +651,11 @@ impl<'a> Resolver<'a> {
                     let r = self.resolve_message(name);
                     out.extend(r.elements.clone());
                 }
+                Element::AttributeRef { owner, name } => {
+                    let flat = flatten_attr_name(owner, name);
+                    let r = self.resolve_attribute(&flat);
+                    out.extend(r.elements.clone());
+                }
                 Element::TermRef { name, args } => {
                     let bindings = args
                         .iter()
@@ -697,6 +702,18 @@ impl<'a> Resolver<'a> {
                     panic!(
                         "{}: [{}] term argument '{}' must resolve to a single element",
                         self.file, self.locale, name
+                    );
+                }
+            }
+            Element::AttributeRef { owner, name } => {
+                let flat = flatten_attr_name(owner, name);
+                let r = self.resolve_attribute(&flat);
+                if r.elements.len() == 1 {
+                    r.elements[0].clone()
+                } else {
+                    panic!(
+                        "{}: [{}] term argument '{}.{}' must resolve to a single element",
+                        self.file, self.locale, owner, name
                     );
                 }
             }
@@ -787,8 +804,15 @@ fn convert_expression(expr: &Expression<&str>) -> Element {
     match expr {
         Expression::Inline(inline) => match inline {
             InlineExpression::VariableReference { id } => Element::VarRef(id.name.to_string()),
-            InlineExpression::MessageReference { id, .. } => {
-                Element::MessageRef(id.name.to_string())
+            InlineExpression::MessageReference { id, attribute } => {
+                if let Some(attr) = attribute {
+                    Element::AttributeRef {
+                        owner: id.name.to_string(),
+                        name: attr.name.to_string(),
+                    }
+                } else {
+                    Element::MessageRef(id.name.to_string())
+                }
             }
             InlineExpression::TermReference { id, arguments, .. } => {
                 let mut args_map = BTreeMap::new();
@@ -847,7 +871,16 @@ fn convert_inline_expression(expr: &InlineExpression<&str>) -> Element {
         InlineExpression::StringLiteral { value } => Element::Text(value.to_string()),
         InlineExpression::NumberLiteral { value } => Element::Text(value.to_string()),
         InlineExpression::VariableReference { id } => Element::VarRef(id.name.to_string()),
-        InlineExpression::MessageReference { id, .. } => Element::MessageRef(id.name.to_string()),
+        InlineExpression::MessageReference { id, attribute } => {
+            if let Some(attr) = attribute {
+                Element::AttributeRef {
+                    owner: id.name.to_string(),
+                    name: attr.name.to_string(),
+                }
+            } else {
+                Element::MessageRef(id.name.to_string())
+            }
+        }
         InlineExpression::TermReference { id, arguments, .. } => {
             let mut args_map = BTreeMap::new();
             if let Some(arguments) = arguments {

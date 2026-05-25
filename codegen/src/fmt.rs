@@ -52,10 +52,11 @@ pub fn gen_fn_decl(name: &str, params: &BTreeMap<String, ParamType>, with_self: 
             write!(out, ", ").unwrap();
         }
         first = false;
+        let safe_pname = sanitize(pname);
         write!(
             out,
             "{}: {}",
-            pname,
+            safe_pname,
             match ptype {
                 ParamType::Str => "&str",
                 ParamType::Num => "usize",
@@ -91,18 +92,21 @@ fn capacity_expr(elements: &[Element], params: &BTreeMap<String, ParamType>) -> 
                     parts.push(acc.to_string());
                     acc = 0;
                 }
+                let safe_name = sanitize(name);
                 parts.push(match params.get(name).unwrap_or(&ParamType::Str) {
                     ParamType::Num => {
                         format!(
                             "if {n} == 0 {{ 1 }} else {{ {n}.ilog10() as usize + 1 }}",
-                            n = name
+                            n = safe_name
                         )
                     }
-                    ParamType::Str => format!("{}.len()", name),
+                    ParamType::Str => format!("{}.len()", safe_name),
                 });
             }
             Element::Select { .. } => unreachable!(),
-            Element::MessageRef(_) | Element::TermRef { .. } => unreachable!(),
+            Element::MessageRef(_) | Element::TermRef { .. } | Element::AttributeRef { .. } => {
+                unreachable!()
+            }
         }
     }
     if acc > 0 {
@@ -125,21 +129,26 @@ fn emit_push_statements(
             Element::Text(t) => {
                 writeln!(code, "{}s.push_str(\"{}\");", indent, escape_str(t)).unwrap();
             }
-            Element::VarRef(name) => match params.get(name).unwrap_or(&ParamType::Str) {
-                ParamType::Num => {
-                    writeln!(
-                        code,
-                        "{}write!(&mut s, \"{{}}\", {}).unwrap();",
-                        indent, name
-                    )
-                    .unwrap();
+            Element::VarRef(name) => {
+                let safe_name = sanitize(name);
+                match params.get(name).unwrap_or(&ParamType::Str) {
+                    ParamType::Num => {
+                        writeln!(
+                            code,
+                            "{}write!(&mut s, \"{{}}\", {}).unwrap();",
+                            indent, safe_name
+                        )
+                        .unwrap();
+                    }
+                    ParamType::Str => {
+                        writeln!(code, "{}s.push_str({});", indent, safe_name).unwrap();
+                    }
                 }
-                ParamType::Str => {
-                    writeln!(code, "{}s.push_str({});", indent, name).unwrap();
-                }
-            },
+            }
             Element::Select { .. } => unreachable!(),
-            Element::MessageRef(_) | Element::TermRef { .. } => unreachable!(),
+            Element::MessageRef(_) | Element::TermRef { .. } | Element::AttributeRef { .. } => {
+                unreachable!()
+            }
         }
     }
 }
@@ -170,9 +179,10 @@ fn gen_select_body(
         .expect("gen_select_body called without Select");
     let (selector, variants) = s;
     let selector_type = params.get(&selector).unwrap_or(&ParamType::Num);
+    let safe_selector = sanitize(&selector);
 
     let mut code = String::new();
-    writeln!(code, "    match {} {{", selector).unwrap();
+    writeln!(code, "    match {} {{", safe_selector).unwrap();
     // Emit non-default variants first, then the default (`_`) last.
     for v in variants.iter().filter(|v| !v.default) {
         writeln!(

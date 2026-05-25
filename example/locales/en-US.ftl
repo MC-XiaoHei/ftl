@@ -66,6 +66,9 @@ save =
     .label = Save { product }
     .tooltip = Save the current { $target }
 
+# Inline attribute reference: { msg.attr } expands to the attribute value
+attr-ref-demo = Placeholder: { login-input.placeholder }
+
 ## 9. Attributes on Terms
 -brand-aurora = Aurora
     .gender = feminine

@@ -17,6 +17,7 @@ fn print_locale() {
     println!("  login-input.title = {}", t!(login_input__title()));
     println!("  save.label = {}", t!(save__label()));
     println!("  save.tooltip = {}", t!(save__tooltip("file")));
+    println!("  attr-ref-demo = {}", t!(attr_ref_demo()));
     println!("  greet(male)   = {}", t!(user_greeting("male")));
     println!("  greet(female) = {}", t!(user_greeting("female")));
     println!("  greet(other)  = {}", t!(user_greeting("other")));

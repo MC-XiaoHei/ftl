@@ -66,6 +66,9 @@ save =
     .label = { product } を保存
     .tooltip = 現在の { $target } を保存
 
+# インライン属性参照：{ msg.attr } は属性値に展開される
+attr-ref-demo = プレースホルダー：{ login-input.placeholder }
+
 ## 9. 用語の属性
 -brand-aurora = オーロラ
     .gender = feminine

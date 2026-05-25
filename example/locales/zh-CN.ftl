@@ -66,6 +66,9 @@ save =
     .label = 保存 { product }
     .tooltip = 保存当前的 { $target }
 
+# 内联属性引用：{ msg.attr } 展开为属性值
+attr-ref-demo = 占位符：{ login-input.placeholder }
+
 ## 9. 术语属性
 -brand-aurora = 极光
     .gender = feminine

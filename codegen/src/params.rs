@@ -28,7 +28,7 @@ fn collect_params_into(
 ) {
     for e in elements {
         match e {
-            Element::Text(_) | Element::MessageRef(_) => {}
+            Element::Text(_) | Element::MessageRef(_) | Element::AttributeRef { .. } => {}
             Element::TermRef { args, .. } => {
                 for value in args.values() {
                     collect_params_into(std::slice::from_ref(value), map, usage, context);
