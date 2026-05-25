@@ -1,6 +1,3 @@
-### 完整的 FTL 示例 — 简体中文
-### ftl-codegen 不支持的功能在 §12 中注释掉。
-
 ## 1. 基本消息
 settings = 设置
 hello = 你好，{ $name }！

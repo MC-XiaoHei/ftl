@@ -1,6 +1,3 @@
-### Comprehensive FTL example — en-US
-### Unsupported features are commented out in §12.
-
 ## 1. Basic Messages
 settings = Settings
 hello = Hello, { $name }!

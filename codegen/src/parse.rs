@@ -58,7 +58,7 @@ impl Generator {
                 .expect("filename is not UTF-8")
                 .to_string();
 
-            // Validate that the locale name is a valid Unicode Language Identifier
+            // locale name is valid Unicode Language Identifier
             if unic_langid::LanguageIdentifier::from_str(&locale).is_err() {
                 diags.push(Diag::error(
                     path.to_string_lossy(),
@@ -95,8 +95,7 @@ impl Generator {
                     for err in &errors {
                         diags.push(format_parse_error(&source, &file_display, &locale, err));
                     }
-                    // If there are any valid entries, still use the partial result
-                    // so that messages/terms that parsed correctly are available.
+                    // use partial result even on parse errors
                     locales.insert(locale, Self::extract(&partial));
                 }
             }
@@ -695,7 +694,7 @@ impl<'a> Resolver<'a> {
                     positional,
                     ..
                 } => {
-                    // Collect free variables from term in source order
+                    // Free variables from term, in source order
                     let raw_term = self
                         .entries
                         .terms
@@ -706,7 +705,7 @@ impl<'a> Resolver<'a> {
                         .iter()
                         .filter_map(|e| {
                             if let Element::VarRef(v) = e {
-                                // Skip if already bound in env_stack
+                                // Already bound in env_stack
                                 if self.lookup_bound_var(v).is_none() {
                                     Some(v.as_str())
                                 } else {
@@ -719,7 +718,7 @@ impl<'a> Resolver<'a> {
                         .collect();
 
                     let mut bindings = BTreeMap::new();
-                    // Positional args bind to free vars in order
+                    // Map positional args to free vars in order
                     for (i, pos_val) in positional.iter().enumerate() {
                         if let Some(var_name) = free_vars.get(i) {
                             bindings.insert(
@@ -974,8 +973,7 @@ fn convert_expression(expr: &Expression<&str>) -> Element {
                     attribute: Some(attr),
                     ..
                 } => {
-                    // Term attribute reference: resolve at compile time.
-                    // Create a special element and return early.
+                    // Term attribute reference in selector
                     let vs = variants
                         .iter()
                         .map(|v| {
@@ -1019,8 +1017,7 @@ fn convert_expression(expr: &Expression<&str>) -> Element {
                 })
                 .collect();
 
-            // Literal selectors (number/string constants) are resolved
-            // at compile time — inline the matching variant directly.
+            // Literal selectors inlined at compile time
             if is_literal {
                 let matched = vs.iter().find(|v| match &v.key {
                     KeyType::Num(val) => val == &selector_str,

@@ -182,7 +182,6 @@ fn gen_select_body(
     let mut code = String::new();
 
     if selector_type == &ParamType::Str {
-        // String selector — use match on &str
         writeln!(code, "    match {} {{", safe_selector).unwrap();
         for v in variants.iter().filter(|v| !v.default) {
             writeln!(
@@ -204,7 +203,6 @@ fn gen_select_body(
         }
         writeln!(code, "    }}").unwrap();
     } else {
-        // Numeric selector — convert to FluentNum, use if/else with eq_int/operands
         writeln!(
             code,
             "    let {}: FluentNum = {}.into();",

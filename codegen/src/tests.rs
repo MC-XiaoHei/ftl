@@ -636,14 +636,9 @@ fn expect_load_error(dir: &std::path::Path, primary: &str, expected_substr: &str
     }
 }
 
-// ========================================================================
-//  Diag / error-reporting integration tests
-// ========================================================================
-
 #[test]
 fn diag_file_not_found() {
     let dir = temp_dir("diag_no_file");
-    // Write a non-ftl file so the directory is not empty, but skip .ftl files
     std::fs::write(dir.join("ignored.txt"), "x").unwrap();
     expect_load_error(&dir, "en-US", "primary locale 'en-US' not found");
 }
@@ -652,7 +647,6 @@ fn diag_file_not_found() {
 fn diag_unreadable_file() {
     let dir = temp_dir("diag_unreadable");
     write_ftl(&dir, "en-US.ftl", "x = 1");
-    // Primary is found, so no error
     let _ = crate::parse::Generator::load(&dir, "en-US");
 }
 
@@ -694,7 +688,7 @@ fn diag_extra_attributes() {
 #[test]
 fn diag_parse_error_expected_token() {
     let dir = temp_dir("diag_parse_tok");
-    // `#` followed by non-space, non-ASCII — triggers ExpectedToken(' ')
+    // `#` followed by non-space triggers ExpectedToken(' ')
     write_ftl(&dir, "en-US.ftl", "x = 1\n#（bad comment\n");
     expect_load_error(&dir, "en-US", "Expected a token starting with");
 }
@@ -824,7 +818,6 @@ fn diag_parse_error_term_ref_as_selector() {
 #[test]
 fn diag_parse_error_expected_inline_expression() {
     let dir = temp_dir("diag_parse_inline");
-    // An empty placeable triggers ExpectedInlineExpression
     write_ftl(&dir, "en-US.ftl", "x = {  }\n");
     expect_load_error(&dir, "en-US", "Expected an inline expression");
 }
@@ -836,10 +829,6 @@ fn diag_parse_error_expected_simple_expression_as_selector() {
     expect_load_error(&dir, "en-US", "Expected a simple expression as selector");
 }
 
-// ========================================================================
-//  Verify that the format_parse_error helper produces readable output
-// ========================================================================
-
 #[test]
 fn diag_parse_error_format_includes_location() {
     use crate::parse::Generator;
@@ -848,7 +837,6 @@ fn diag_parse_error_format_includes_location() {
     let dir = temp_dir("diag_format_loc");
     write_ftl(&dir, "en-US.ftl", "msg = hello\nbad = { \"\\z\" }\n");
 
-    // Capture the panic message triggered by the unknown escape
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         Generator::load(&dir, "en-US");
     }));
@@ -874,7 +862,6 @@ fn diag_parse_error_format_shows_snippet() {
     use crate::parse::Generator;
 
     let dir = temp_dir("diag_format_snip");
-    // Put the error on a line we can verify in the output
     write_ftl(&dir, "en-US.ftl", "a = 1\nb = 2\nc = { \"\\x\" }\n");
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -899,7 +886,6 @@ fn diag_parse_error_format_shows_snippet() {
 
 #[test]
 fn diag_parse_error_expected_term_field() {
-    // Term with no value and no attributes triggers ExpectedTermField
     let dir = temp_dir("diag_term_field");
     write_ftl(&dir, "en-US.ftl", "-t =\nx = 1\n");
     expect_load_error(&dir, "en-US", "Expected a term field for");
@@ -907,10 +893,7 @@ fn diag_parse_error_expected_term_field() {
 
 #[test]
 fn diag_parse_error_missing_value_attribute() {
-    // An attribute with no value.  The fluent-syntax parser silently
-    // swallows this error inside get_attributes(), so it surfaces as
-    // ExpectedMessageField instead.  We test the variant path below.
-    // See diag_parse_error_missing_value_variant for a triggerable case.
+    // Swallowed by get_attributes(), surfaces as ExpectedMessageField.
 }
 
 #[test]
