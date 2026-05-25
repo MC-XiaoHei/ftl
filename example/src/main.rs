@@ -1,4 +1,8 @@
-include!(concat!(env!("OUT_DIR"), "/i18n_gen.rs"));
+use crate::i18n::*;
+
+pub mod i18n {
+    include!(concat!(env!("OUT_DIR"), "/i18n_gen.rs"));
+}
 
 fn print_locale() {
     println!("  settings = {}", t!(settings()));
@@ -12,7 +16,7 @@ fn print_locale() {
     println!("  about-brand = {}", t!(about_brand("genitive")));
     println!("  pos-args-demo = {}", t!(pos_args_demo()));
     println!(
-        "  update-brand (nominative) = {}",
+        "  update-brand(nominative) = {}",
         t!(update_brand("nominative"))
     );
     println!("  login-input.title = {}", t!(login_input__title()));
