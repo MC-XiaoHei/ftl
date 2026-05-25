@@ -303,8 +303,12 @@ fn variant_arm_pattern_num(key: &KeyType, locale: &str) -> String {
             Some("n == 1") => "1.0".to_string(),
             Some("n == 2") => "2.0".to_string(),
             Some(rule) => {
-                let guard = rule.replace('n', "n").replace(" == ", " == ");
-                format!("n if {}", guard)
+                // CLDR rules use integer n; convert f64 match var to i64
+                let guarded = rule
+                    .replace("n !=", "(n.trunc() as i64) !=")
+                    .replace("n ==", "(n.trunc() as i64) ==")
+                    .replace("n %", "(n.trunc() as i64) %");
+                format!("n if {}", guarded)
             }
             None => "false".to_string(),
         },

@@ -22,9 +22,9 @@ Test Environment: AMD AI 9 H 365, `cargo bench -p example`.
 - Fluent built-in functions (`NUMBER()`, `DATETIME()`, etc.) are unsupported
 - Partially-formatted variables (`FluentDateTime` / `FluentNumber`) are unsupported
 - Function calls as selectors are unsupported
-- Unassigned variables with different types (e.g. both `&str` and numeric) are unsupported
-- Non-primary locales must be subsets of the primary locale
-- Missing messages fallback to primary locale at build time, fallback chain is unsupported
+- The same free variable cannot be inferred as both string-like and numeric-like across all uses
+- Non-primary locales must be structural subsets of the primary locale (messages, terms, and attributes)
+- Missing entries in secondary locales are resolved against the primary locale at code generation time; runtime fallback chains are not supported
 
 A full walkthrough of supported FTL syntax is available in the example locale
 files.
@@ -136,6 +136,26 @@ pub fn welcome(gender: &str) -> String {
     }
 }
 ```
+
+*`FluentNum` — unified numeric type*
+
+All `{ $count }` variables and `{ $n -> ... }` selectors use `FluentNum`, a
+thin wrapper around `f64` with `From` impls for every primitive numeric type.
+
+Match behavior for numeric selectors:
+
+| Variant key | Generated pattern | Notes |
+|---|---|---|
+| `[0]` `[42]` | `0.0 =>`, `42.0 =>` | Exact `f64` match; `-0.0` also matches `0.0` |
+| `[one]` (EN) | `1.0 =>` | Same as `[1]` for English |
+| `[one]` (RU etc.) | `n if (n.trunc() as i64) % 10 == 1` | Truncated to `i64` first |
+| `[few]` | `n if (n.trunc() as i64) % 10 >= 2 && ...` | Same i64 truncation |
+| `[other]` | `_ =>` | Fallback (always required) |
+| `NaN` | — | Never matches any exact pattern; falls to `[other]` |
+
+Fractional values (e.g. `1.5`) do not match integer patterns like `1.0` and
+are routed to the default variant. `FluentNum` also implements `Display`,
+`PartialEq<f64>`, and `Deref<Target=f64>` for direct use in format strings.
 
 **Message reference -> compile-time inlined**
 
