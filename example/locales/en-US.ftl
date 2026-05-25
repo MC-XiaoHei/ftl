@@ -117,24 +117,21 @@ finish-place =
        *[other] You finished { $place }th!
     }
 
-## 11. Comments (# message-level, ## group-level, ### file-level)
-settings-page = Settings Page
+## 12. Unsupported Features
 
-## 12. Unsupported Features (commented out — would panic)
-
-# 12a. NUMBER() / 12b. DATETIME() — panic: "Unsupported expression"
+# 12a. NUMBER() / 12b. DATETIME()
 # dpi-ratio = Your DPI ratio is { NUMBER($ratio, minimumFractionDigits: 2) }
 # today-is = Today is { DATETIME($date) }
 # full-date = { DATETIME($date, month: "long", year: "numeric", day: "numeric") }
 
-# 12c. Function call as selector — panic: "Select selector must be a variable"
+# 12c. Function call as selector
 # your-score =
 #     { NUMBER($score, minimumFractionDigits: 1) ->
 #         [0.0]   You scored zero points.
 #        *[other] You scored { NUMBER($score, minimumFractionDigits: 1) } points.
 #     }
 
-# 12d. Ordinal via NUMBER(…, type: "ordinal") — panic: "Unsupported expression"
+# 12d. Ordinal via NUMBER(…, type: "ordinal")
 # your-rank = { NUMBER($pos, type: "ordinal") ->
 #    [1] You finished first!
 #    [one] You finished { $pos }st
@@ -143,12 +140,9 @@ settings-page = Settings Page
 #   *[other] You finished { $pos }th
 # }
 
-# 12e. Positional term arguments — panic: "not supported for '-'"
+# 12e. Positional term arguments
 # -greet = Hello, { $name }!
 # say-hi = { -greet("World") }
 
 # 12f. Partially-formatted variables (FluentDateTime / FluentNumber)
-#      No special .ftl syntax; the developer wraps the value at the API level.
 # today = Today is { $day }
-
-### EOF

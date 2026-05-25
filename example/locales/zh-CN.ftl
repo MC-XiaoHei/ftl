@@ -117,24 +117,21 @@ finish-place =
        *[other] 您获得了第 { $place } 名！
     }
 
-## 11. 注释（# 消息级、## 分组级、### 文件级）
-settings-page = 设置页面
+## 12. 不支持的功能
 
-## 12. 不支持的功能（已注释 — 取消注释会 panic）
-
-# 12a. NUMBER() / 12b. DATETIME() — panic: "Unsupported expression"
+# 12a. NUMBER() / 12b. DATETIME()
 # dpi-ratio = 您的 DPI 比率是 { NUMBER($ratio, minimumFractionDigits: 2) }
 # today-is = 今天是 { DATETIME($date) }
 # full-date = { DATETIME($date, month: "long", year: "numeric", day: "numeric") }
 
-# 12c. 函数调用作选择器 — panic: "Select selector must be a variable"
+# 12c. 函数调用作选择器
 # your-score =
 #     { NUMBER($score, minimumFractionDigits: 1) ->
 #         [0.0]   您得了零分。
 #        *[other] 您得了 { NUMBER($score, minimumFractionDigits: 1) } 分。
 #     }
 
-# 12d. 通过 NUMBER(…, type: "ordinal") 的序数 — panic: "Unsupported expression"
+# 12d. 通过 NUMBER(…, type: "ordinal") 的序数
 # your-rank = { NUMBER($pos, type: "ordinal") ->
 #    [1] 第一名！
 #    [one] 第 { $pos } 名
@@ -143,12 +140,9 @@ settings-page = 设置页面
 #   *[other] 第 { $pos } 名
 # }
 
-# 12e. 位置参数术语 — panic: "not supported for '-'"
+# 12e. 位置参数术语
 # -greet = 你好，{ $name }！
 # say-hi = { -greet("世界") }
 
 # 12f. 部分格式化变量（FluentDateTime / FluentNumber）
-#      无特殊 .ftl 语法；开发者在 API 层包装值。
 # today = 今天是 { $day }
-
-### 文件结束

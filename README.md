@@ -19,38 +19,20 @@ Test Environment: AMD AI 9 H 365, `cargo bench -p example`.
 
 ## Limitations
 
-A full walkthrough of supported and unsupported FTL syntax is available in
-the example locale files:
+- Positional term arguments are currently unsupported
+- Fluent built-in functions (`NUMBER()`, `DATETIME()`, etc.) are currently unsupported
+- Function calls as selectors are currently unsupported
+- Partially-formatted variables (`FluentDateTime` / `FluentNumber`) are unsupported
+- Same variable used with different types (e.g. both `&str` and numeric) is unsupported
+- Non-primary locales must be a subset of the primary locale's keys
+- Missing messages fallback to primary locale at build time, fallback chain is unsupported
+
+A full walkthrough of supported FTL syntax is available in the example locale
+files.
 
 - [`locales/en-US.ftl`](example/locales/en-US.ftl)
 - [`locales/zh-CN.ftl`](example/locales/zh-CN.ftl)
 - [`locales/ja-JP.ftl`](example/locales/ja-JP.ftl)
-
-Unsupported features are commented out with explanations.
-
-Currently, only a subset of Fluent syntax is supported (see example `.ftl` files
-for a full walkthrough).  Unsupported features:
-
-- Fluent built-in functions (`NUMBER()`, `DATETIME()`, etc.)
-- Partially-formatted variables (`FluentDateTime` / `FluentNumber`)
-- Positional term arguments
-
-**Select expressions**
-
-- Select selector can be a variable reference (`{ $var -> ... }`), number literal
-  (`{ 42 -> ... }`), string literal (`{ "str" -> ... }`), or term attribute
-  reference (`{ -term.attr -> ... }`).  Other selector types are rejected at
-  build time.
-- Select selector type is inferred: numeric variant keys or plural categories
-  (`[one]`, `[few]`, etc.) → `usize`; string variant keys like `[male]` /
-  `[female]` → `&str`.
-- Cyclic references between messages or terms are detected and rejected at build time.
-- Parameters with conflicting inferred types (e.g. used as both `&str` and `usize`) are detected and rejected at build time.
-
-**Locales**
-
-- Non-primary locales must be a subset of the primary locale's message keys, terms, and attributes. Extra keys will report a build error.
-- Missing messages in secondary locales fall back to the primary locale's content with a comment in generated code — no runtime fallback mechanism.
 
 ## Usage
 

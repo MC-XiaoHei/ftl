@@ -117,24 +117,21 @@ finish-place =
        *[other] { $place }位になりました！
     }
 
-## 11. コメント（# メッセージレベル、## グループレベル、### ファイルレベル）
-settings-page = 設定ページ
+## 12. 未サポートの機能
 
-## 12. 未サポートの機能（コメントアウト — panic 発生）
-
-# 12a. NUMBER() / 12b. DATETIME() — panic: "Unsupported expression"
+# 12a. NUMBER() / 12b. DATETIME()
 # dpi-ratio = DPI 比率は { NUMBER($ratio, minimumFractionDigits: 2) } です
 # today-is = 今日は { DATETIME($date) } です
 # full-date = { DATETIME($date, month: "long", year: "numeric", day: "numeric") }
 
-# 12c. 関数呼び出しをセレクターに使用 — panic: "Select selector must be a variable"
+# 12c. 関数呼び出しをセレクターに使用
 # your-score =
 #     { NUMBER($score, minimumFractionDigits: 1) ->
 #         [0.0]   0点でした。
 #        *[other] { NUMBER($score, minimumFractionDigits: 1) } 点でした。
 #     }
 
-# 12d. NUMBER(…, type: "ordinal") による序数 — panic: "Unsupported expression"
+# 12d. NUMBER(…, type: "ordinal") による序数
 # your-rank = { NUMBER($pos, type: "ordinal") ->
 #    [1] 1位！
 #    [one] { $pos }位
@@ -143,12 +140,9 @@ settings-page = 設定ページ
 #   *[other] { $pos }位
 # }
 
-# 12e. 位置引数の用語 — panic: "not supported for '-'"
+# 12e. 位置引数の用語
 # -greet = こんにちは、{ $name }！
 # say-hi = { -greet("世界") }
 
 # 12f. 部分フォーマット変数（FluentDateTime / FluentNumber）
-#      特別な .ftl 構文は不要；API レベルで値をラップ。
 # today = 今日は { $day } です
-
-### ファイル終わり
