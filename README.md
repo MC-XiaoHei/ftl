@@ -24,7 +24,7 @@ Test Environment: AMD AI 9 H 365, `cargo bench -p example`.
 - Function calls as selectors are currently unsupported
 - Partially-formatted variables (`FluentDateTime` / `FluentNumber`) are unsupported
 - Same variable used with different types (e.g. both `&str` and numeric) is unsupported
-- Non-primary locales must be a subset of the primary locale's keys
+- Non-primary locales must be subsets of the primary locale
 - Missing messages fallback to primary locale at build time, fallback chain is unsupported
 
 A full walkthrough of supported FTL syntax is available in the example locale
