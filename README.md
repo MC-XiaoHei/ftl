@@ -19,7 +19,7 @@ Test Environment: AMD AI 9 H 365, `cargo bench -p example`.
 
 ## Limitations
 
-- Fluent built-in functions (`NUMBER()`, `DATETIME()`, etc.) are unsupported
+- Fluent built-in functions (`NUMBER()`, `DATETIME()`, etc.) are currently unsupported
 - Partially-formatted variables (`FluentDateTime` / `FluentNumber`) are unsupported
 - Function calls as selectors are unsupported
 - The same free variable cannot be inferred as both string-like and numeric-like across all uses
@@ -82,7 +82,7 @@ pub fn msg() -> &'static str { "hello world" }
 pub fn count() -> &'static str { "42" }
 ```
 
-**Variable interpolation -> Pre-allocated `String`**
+**Variable interpolation -> Pre-sized `String`**
 
 ```fluent
 hello = Hello, { $name }!
@@ -122,8 +122,10 @@ pub fn files(count: impl Into<FluentNum>) -> String {
     match *count {
         1.0 => "1 file".to_string(),
         _ => {
-            let mut s = String::with_capacity(32);
-            write!(s, "{count} files").unwrap();
+            let cap = 32 + 6; // 32 is a conservative fixed bound to avoid runtime width calculation
+            let mut s = String::with_capacity(cap);
+            write!(&mut s, "{}", count).unwrap();
+            s.push_str(" files");
             s
         }
     }
@@ -143,12 +145,12 @@ pub fn welcome(gender: &str) -> String {
 
 *`FluentNum` — unified numeric type*
 
-All `{ $count }` variables and `{ $n -> ... }` selectors use `FluentNum`, a
-thin wrapper around `f64` with `From` impls for every primitive numeric type.
+All `{ $count }` variables and `{ $n -> ... }` selectors use `FluentNum`, a thin wrapper around `f64` with `From` impls for every primitive numeric type.
 
-> **Precision note:** `f64` (IEEE-754 double) can represent integers up to
-> 2⁵³ exactly. Larger integer values may lose precision and fail to match
-> exact numeric selector keys like `[0]` or `[42]`.
+> **Precision note:** `f64` (IEEE-754 double) can represent integers up to 2⁵³ exactly.
+> Larger integer values may lose precision and fail to match exact numeric selector keys like `[0]` or `[42]`.
+> Plural-category matching additionally relies on `i64`-based guards.
+> Values outside the `i64` range are not guaranteed to produce meaningful category matches.
 
 Match behavior for numeric selectors:
 
@@ -159,12 +161,11 @@ Match behavior for numeric selectors:
 | `[one]` (RU etc.) | `n if (n.trunc() as i64) % 10 == 1` | Truncated to `i64` first |
 | `[few]` | `n if (n.trunc() as i64) % 10 >= 2 && ...` | Same i64 truncation |
 | `[other]` | `_ =>` | Fallback (always required) |
-| `NaN` | — | Never matches any exact pattern; falls to `[other]` |
+| `NaN` / `±∞` | — | Non-finite values never participate in category matching; fall to `[other]` |
 
 Plural-category matching is only evaluated for finite integer-valued inputs.
-Non-integer values always fall through to the default variant. `FluentNum`
-also implements `Display`, `PartialEq<f64>`, and `Deref<Target=f64>` for
-direct use in format strings.
+Fractional values always fall through to the default variant.
+`FluentNum` also implements `Display`, `PartialEq<f64>`, and `Deref<Target=f64>` for direct use in format strings.
 
 **Message reference -> compile-time inlined**
 
@@ -217,7 +218,7 @@ about = About { -brand-name(case: "Awesome") }
 pub fn about() -> &'static str { "About Awesome Zed" }
 ```
 
-**Parameterized term with var -> Pre-allocated `String`**
+**Parameterized term with var -> Pre-sized `String`**
 
 ```fluent
 -brand-name = { $case } Zed
