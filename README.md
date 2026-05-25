@@ -23,7 +23,7 @@ Test Environment: AMD AI 9 H 365, `cargo bench -p example`.
 - Partially-formatted variables (`FluentDateTime` / `FluentNumber`) are unsupported
 - Function calls as selectors are unsupported
 - The same free variable cannot be inferred as both string-like and numeric-like across all uses
-- Non-primary locales must be structural subsets of the primary locale (messages, terms, and attributes)
+- Non-primary locales must be structural subsets of the primary locale (messages, terms, and their attributes)
 - Missing entries in secondary locales are resolved against the primary locale at code generation time; runtime fallback chains are not supported
 
 A full walkthrough of supported FTL syntax is available in the example locale
@@ -121,7 +121,11 @@ pub fn files(count: impl Into<FluentNum>) -> String {
     let count: FluentNum = count.into();
     match *count {
         1.0 => "1 file".to_string(),
-        _ => format!("{count} files"),
+        _ => {
+            let mut s = String::with_capacity(32);
+            write!(s, "{count} files").unwrap();
+            s
+        }
     }
 }
 ```
@@ -142,6 +146,10 @@ pub fn welcome(gender: &str) -> String {
 All `{ $count }` variables and `{ $n -> ... }` selectors use `FluentNum`, a
 thin wrapper around `f64` with `From` impls for every primitive numeric type.
 
+> **Precision note:** `f64` (IEEE-754 double) can represent integers up to
+> 2⁵³ exactly. Larger integer values may lose precision and fail to match
+> exact numeric selector keys like `[0]` or `[42]`.
+
 Match behavior for numeric selectors:
 
 | Variant key | Generated pattern | Notes |
@@ -153,9 +161,10 @@ Match behavior for numeric selectors:
 | `[other]` | `_ =>` | Fallback (always required) |
 | `NaN` | — | Never matches any exact pattern; falls to `[other]` |
 
-Fractional values (e.g. `1.5`) do not match integer patterns like `1.0` and
-are routed to the default variant. `FluentNum` also implements `Display`,
-`PartialEq<f64>`, and `Deref<Target=f64>` for direct use in format strings.
+Plural-category matching is only evaluated for finite integer-valued inputs.
+Non-integer values always fall through to the default variant. `FluentNum`
+also implements `Display`, `PartialEq<f64>`, and `Deref<Target=f64>` for
+direct use in format strings.
 
 **Message reference -> compile-time inlined**
 
