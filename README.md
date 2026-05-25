@@ -35,8 +35,13 @@ for a full walkthrough).  Unsupported features:
 
 **Select expressions**
 
-- Select selector must be a variable reference (`{ $var -> ... }`). Other selector types are rejected at build time.
-- Select selector type is inferred: numeric variant keys or plural categories (`[one]`, `[few]`, etc.) → `usize`; string variant keys like `[male]` / `[female]` → `&str`.
+- Select selector can be a variable reference (`{ $var -> ... }`), number literal
+  (`{ 42 -> ... }`), string literal (`{ "str" -> ... }`), or term attribute
+  reference (`{ -term.attr -> ... }`).  Other selector types are rejected at
+  build time.
+- Select selector type is inferred: numeric variant keys or plural categories
+  (`[one]`, `[few]`, etc.) → `usize`; string variant keys like `[male]` /
+  `[female]` → `&str`.
 - Cyclic references between messages or terms are detected and rejected at build time.
 - Parameters with conflicting inferred types (e.g. used as both `&str` and `usize`) are detected and rejected at build time.
 

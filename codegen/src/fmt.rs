@@ -185,7 +185,6 @@ fn gen_select_body(
 
     let mut code = String::new();
     writeln!(code, "    match {} {{", safe_selector).unwrap();
-    // Emit non-default variants first, then the default (`_`) last.
     for v in variants.iter().filter(|v| !v.default) {
         writeln!(
             code,

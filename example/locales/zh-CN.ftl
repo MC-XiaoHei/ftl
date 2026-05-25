@@ -147,7 +147,7 @@ settings-page = 设置页面
 # -greet = 你好，{ $name }！
 # say-hi = { -greet("世界") }
 
-# 12h. 部分格式化变量（FluentDateTime / FluentNumber）
+# 12f. 部分格式化变量（FluentDateTime / FluentNumber）
 #      无特殊 .ftl 语法；开发者在 API 层包装值。
 # today = 今天是 { $day }
 

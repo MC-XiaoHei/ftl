@@ -683,10 +683,8 @@ impl<'a> Resolver<'a> {
                     attr,
                     variants,
                 } => {
-                    // Resolve the term attribute value at compile time
                     let flat = flatten_attr_name(term, attr);
                     let r = self.resolve_attribute(&flat);
-                    // The attribute should resolve to pure text
                     let attr_value: String = r
                         .elements
                         .iter()
@@ -698,7 +696,6 @@ impl<'a> Resolver<'a> {
                             }
                         })
                         .collect();
-                    // Find matching variant by key
                     let matched = variants.iter().find(|v| match &v.key {
                         KeyType::Ident(ident) => ident == &attr_value,
                         KeyType::Num(num) => num == &attr_value,
@@ -833,8 +830,8 @@ fn convert_element(e: &PatternElement<&str>) -> Element {
     }
 }
 
-/// Like `convert_elements` but returns a single `Element` by folding adjacent text.
-/// Used for literal selectors where the result is inlined at compile time.
+/// Like convert_elements but returns a single Element, folding adjacent text.
+/// Used to inline literal selectors at compile time.
 fn convert_collected(elems: Vec<Element>) -> Element {
     let mut folded = fold_text(elems);
     if folded.is_empty() {
@@ -842,8 +839,6 @@ fn convert_collected(elems: Vec<Element>) -> Element {
     } else if folded.len() == 1 {
         folded.swap_remove(0)
     } else {
-        // Multiple non-text elements (e.g. VarRef + Text) — wrap as select with
-        // a single default variant so the codegen generates code for it.
         Element::Select {
             selector: "_resolved_literal".into(),
             variants: vec![Variant {
@@ -1027,20 +1022,12 @@ fn convert_inline_expression(expr: &InlineExpression<&str>) -> Element {
     }
 }
 
-// ---------------------------------------------------------------------------
-//  Diagnostic helpers — produce readable, locatable parse-error output
-// ---------------------------------------------------------------------------
-
-/// Return the 1‑based line number for a byte offset in `source`.
 fn line_of(source: &str, offset: usize) -> usize {
     source[..offset].chars().filter(|&c| c == '\n').count() + 1
 }
 
-/// Return a Diag that looks like a typical compiler error with location + snippet.
 fn format_parse_error(source: &str, file: &str, locale: &str, error: &ParserError) -> Diag {
     let line = line_of(source, error.pos.start);
-
-    // Find the start and end of the line containing the error
     let bol = source[..error.pos.start]
         .rfind('\n')
         .map(|p| p + 1)
@@ -1050,22 +1037,14 @@ fn format_parse_error(source: &str, file: &str, locale: &str, error: &ParserErro
         .map(|p| error.pos.start + p)
         .unwrap_or(source.len());
     let line_text = &source[bol..eol];
-
-    // Column (1-based) within that line
     let col = error.pos.start - bol + 1;
-
-    // Truncate if the line is very long
     let snippet = if line_text.len() > 78 {
         format!("{}...", &line_text[..75])
     } else {
         line_text.to_string()
     };
-
-    // Underline the error span
     let underline_len = usize::max(1, error.pos.end.saturating_sub(error.pos.start));
     let underline = "^".repeat(underline_len);
-
-    // Additional hints for common mistakes
     let hint = match format!("{}", error).as_str() {
         msg if msg.contains("Expected a token starting with") => {
             "\n   = help: FTL comments must start with \"# \" (hash followed by a space)"
@@ -1096,8 +1075,6 @@ fn format_parse_error(source: &str, file: &str, locale: &str, error: &ParserErro
 #[cfg_attr(coverage, coverage(off))]
 mod tests {
     use super::*;
-
-    // -- fold_text --
 
     #[test]
     fn fold_text_merges_adjacent_text() {
@@ -1135,16 +1112,12 @@ mod tests {
         assert!(result.is_empty());
     }
 
-    // -- ref_prefix --
-
     #[test]
     fn ref_prefix_variants() {
         assert_eq!(ref_prefix(RefKind::Message), "");
         assert_eq!(ref_prefix(RefKind::Term), "-");
         assert_eq!(ref_prefix(RefKind::Attribute), ".");
     }
-
-    // -- flatten_attr_name --
 
     #[test]
     fn flatten_attr_name_with_hyphens() {
@@ -1158,8 +1131,6 @@ mod tests {
     fn flatten_attr_name_simple() {
         assert_eq!(flatten_attr_name("save", "label"), "save__label");
     }
-
-    // -- line_of --
 
     #[test]
     fn line_of_first_line() {
@@ -1177,8 +1148,6 @@ mod tests {
     fn line_of_empty_source() {
         assert_eq!(line_of("", 0), 1);
     }
-
-    // -- format_parse_error --
 
     #[test]
     fn format_parse_error_shows_snippet_and_caret() {

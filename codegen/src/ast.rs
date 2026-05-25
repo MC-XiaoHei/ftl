@@ -40,8 +40,7 @@ pub enum Element {
         attribute: Option<String>,
         args: BTreeMap<String, Element>,
     },
-    /// Term attribute reference used as a select selector.
-    /// Resolved at compile time in the Resolver.
+    /// Term attribute reference as select selector, resolved at compile time.
     TermAttrSelect {
         term: String,
         attr: String,

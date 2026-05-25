@@ -147,7 +147,7 @@ settings-page = Settings Page
 # -greet = Hello, { $name }!
 # say-hi = { -greet("World") }
 
-# 12h. Partially-formatted variables (FluentDateTime / FluentNumber)
+# 12f. Partially-formatted variables (FluentDateTime / FluentNumber)
 #      No special .ftl syntax; the developer wraps the value at the API level.
 # today = Today is { $day }
 

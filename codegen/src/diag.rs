@@ -132,7 +132,6 @@ mod tests {
             Diag::warning("", "", "", "w1"),
             Diag::warning("", "", "", "w2"),
         ];
-        // Should not panic
         report_diagnostics(&diags);
     }
 

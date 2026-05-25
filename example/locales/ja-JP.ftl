@@ -147,7 +147,7 @@ settings-page = 設定ページ
 # -greet = こんにちは、{ $name }！
 # say-hi = { -greet("世界") }
 
-# 12h. 部分フォーマット変数（FluentDateTime / FluentNumber）
+# 12f. 部分フォーマット変数（FluentDateTime / FluentNumber）
 #      特別な .ftl 構文は不要；API レベルで値をラップ。
 # today = 今日は { $day } です
 
