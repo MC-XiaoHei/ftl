@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 use std::fs;
 use std::path::Path;
+use std::str::FromStr;
 
 use fluent_syntax::ast::{self, Entry, Expression, InlineExpression, PatternElement, VariantKey};
 use fluent_syntax::parser;
@@ -9,16 +10,14 @@ use fluent_syntax::parser::ParserError;
 
 use crate::ast::*;
 use crate::diag::{report_diagnostics, Diag, DiagKind};
-use crate::fmt::{gen_fn_decl, generate_one_function};
+use crate::fmt::generate_one_function;
 use crate::params::collect_params_with_context;
-use crate::util::{sanitize, sanitize_const, sanitize_upper};
+use crate::util::{sanitize, sanitize_upper};
 
 pub struct Generator {
     pub primary: String,
     pub locales: BTreeMap<String, LocaleEntries>,
     pub diags: Vec<Diag>,
-    #[allow(dead_code)]
-    file_map: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -29,7 +28,6 @@ enum VisitState {
 
 struct Resolver<'a> {
     locale: &'a str,
-    #[allow(dead_code)]
     file: &'a str,
     entries: &'a LocaleEntries,
     messages: BTreeMap<String, Message>,
@@ -59,6 +57,21 @@ impl Generator {
                 .to_str()
                 .expect("filename is not UTF-8")
                 .to_string();
+
+            // Validate that the locale name is a valid Unicode Language Identifier
+            if unic_langid::LanguageIdentifier::from_str(&locale).is_err() {
+                diags.push(Diag::error(
+                    path.to_string_lossy(),
+                    &locale,
+                    "",
+                    format!(
+                        "'{}' is not a valid Unicode Language Identifier (expected e.g. en-US, zh-CN)",
+                        locale
+                    ),
+                ));
+                continue;
+            }
+
             let file_path = path.to_string_lossy().to_string();
             file_map.insert(locale.clone(), file_path);
             let source = match fs::read_to_string(&path) {
@@ -194,7 +207,6 @@ impl Generator {
             primary: primary.to_string(),
             locales: resolved_locales,
             diags,
-            file_map,
         }
     }
 
@@ -265,25 +277,54 @@ impl Generator {
         writeln!(out, "// Primary language: {}", self.primary).unwrap();
         writeln!(out, "#[allow(non_upper_case_globals, unused)]").unwrap();
         writeln!(out).unwrap();
+        self.emit_fluent_num(&mut out);
         for locale in &locales {
             self.emit_module(locale, &mut out);
-        }
-        self.emit_trait(&mut out);
-        for locale in &locales {
-            self.emit_impl(locale, &mut out);
         }
         self.emit_runtime(&locales, &mut out);
         writeln!(out, "#[macro_export]").unwrap();
         writeln!(out, "macro_rules! t {{").unwrap();
+        writeln!(out, "    ($key:ident) => {{").unwrap();
         writeln!(
             out,
-            "    ($key:ident) => {{ $crate::get_locale().$key() }};"
+            "        match $crate::LOCALE_ID.load(Ordering::Relaxed) {{"
         )
         .unwrap();
+        for (idx, locale) in locales.iter().enumerate() {
+            let mn = sanitize(locale);
+            writeln!(out, "            {} => $crate::{}::$key(),", idx, mn).unwrap();
+        }
         writeln!(
             out,
-            "    ($key:ident($($args:expr),* $(,)?)) => {{ $crate::get_locale().$key($($args),*) }};"
-        ).unwrap();
+            "            _ => $crate::{}::$key(),",
+            sanitize(&self.primary)
+        )
+        .unwrap();
+        writeln!(out, "        }}").unwrap();
+        writeln!(out, "    }};").unwrap();
+        writeln!(out, "    ($key:ident($($args:expr),* $(,)?)) => {{").unwrap();
+        writeln!(
+            out,
+            "        match $crate::LOCALE_ID.load(Ordering::Relaxed) {{"
+        )
+        .unwrap();
+        for (idx, locale) in locales.iter().enumerate() {
+            let mn = sanitize(locale);
+            writeln!(
+                out,
+                "            {} => $crate::{}::$key($($args),*),",
+                idx, mn
+            )
+            .unwrap();
+        }
+        writeln!(
+            out,
+            "            _ => $crate::{}::$key($($args),*),",
+            sanitize(&self.primary)
+        )
+        .unwrap();
+        writeln!(out, "        }}").unwrap();
+        writeln!(out, "    }};").unwrap();
         writeln!(out, "}}").unwrap();
         out
     }
@@ -293,6 +334,7 @@ impl Generator {
         writeln!(out, "pub mod {} {{", mod_name).unwrap();
         writeln!(out, "    #![allow(non_snake_case)]").unwrap();
         writeln!(out, "    use std::fmt::Write;").unwrap();
+        writeln!(out, "    use super::FluentNum;").unwrap();
         let le = &self.locales[locale];
         let pe = &self.locales[&self.primary];
         let lmsg: BTreeSet<&str> = le.messages.keys().map(|k| k.as_str()).collect();
@@ -361,109 +403,101 @@ impl Generator {
         writeln!(out).unwrap();
     }
 
-    fn emit_trait(&self, out: &mut String) {
-        writeln!(out, "#[allow(non_snake_case)]").unwrap();
-        writeln!(out, "pub trait I18n {{").unwrap();
-        for msg in self.locales[&self.primary].messages.values() {
-            writeln!(
-                out,
-                "    fn {};",
-                gen_fn_decl(
-                    &msg.name,
-                    &collect_params_with_context(&msg.elements, &format!("message '{}'", msg.name)),
-                    true
-                )
-            )
-            .unwrap();
-        }
-        for attr in self.locales[&self.primary].attributes.values() {
-            let params = collect_params_with_context(
-                &attr.elements,
-                &format!("attribute '{}.{}'", attr.owner, attr.name),
-            );
-            writeln!(
-                out,
-                "    fn {};",
-                gen_fn_decl(&flatten_attr_name(&attr.owner, &attr.name), &params, true)
-            )
-            .unwrap();
-        }
+    fn emit_fluent_num(&self, out: &mut String) {
+        writeln!(out, "pub struct FluentNum(f64);").unwrap();
+        writeln!(out).unwrap();
+        writeln!(out, "impl From<usize> for FluentNum {{").unwrap();
+        writeln!(out, "    fn from(v: usize) -> Self {{ Self(v as f64) }}").unwrap();
+        writeln!(out, "}}").unwrap();
+        writeln!(out, "impl From<i64> for FluentNum {{").unwrap();
+        writeln!(out, "    fn from(v: i64) -> Self {{ Self(v as f64) }}").unwrap();
+        writeln!(out, "}}").unwrap();
+        writeln!(out, "impl From<f64> for FluentNum {{").unwrap();
+        writeln!(out, "    fn from(v: f64) -> Self {{ Self(v) }}").unwrap();
+        writeln!(out, "}}").unwrap();
+        writeln!(out, "impl From<u64> for FluentNum {{").unwrap();
+        writeln!(out, "    fn from(v: u64) -> Self {{ Self(v as f64) }}").unwrap();
+        writeln!(out, "}}").unwrap();
+        writeln!(out, "impl From<i32> for FluentNum {{").unwrap();
+        writeln!(out, "    fn from(v: i32) -> Self {{ Self(v as f64) }}").unwrap();
         writeln!(out, "}}").unwrap();
         writeln!(out).unwrap();
-    }
-
-    fn emit_impl(&self, locale: &str, out: &mut String) {
-        let sn = sanitize_upper(locale);
-        let mn = sanitize(locale);
-        writeln!(out, "pub struct {};", sn).unwrap();
-        writeln!(out, "impl I18n for {} {{", sn).unwrap();
-        for msg in self.locales[&self.primary].messages.values() {
-            let params =
-                collect_params_with_context(&msg.elements, &format!("message '{}'", msg.name));
-            let args: Vec<String> = params.keys().map(|s| sanitize(s)).collect();
-            writeln!(out, "    fn {} {{", gen_fn_decl(&msg.name, &params, true)).unwrap();
-            writeln!(
-                out,
-                "        {}::{}({})",
-                mn,
-                sanitize(&msg.name),
-                args.join(", ")
-            )
-            .unwrap();
-            writeln!(out, "    }}").unwrap();
-        }
-        for attr in self.locales[&self.primary].attributes.values() {
-            let params = collect_params_with_context(
-                &attr.elements,
-                &format!("attribute '{}.{}'", attr.owner, attr.name),
-            );
-            let fn_name = flatten_attr_name(&attr.owner, &attr.name);
-            let args: Vec<String> = params.keys().map(|s| sanitize(s)).collect();
-            writeln!(out, "    fn {} {{", gen_fn_decl(&fn_name, &params, true)).unwrap();
-            writeln!(
-                out,
-                "        {}::{}({})",
-                mn,
-                sanitize(&fn_name),
-                args.join(", ")
-            )
-            .unwrap();
-            writeln!(out, "    }}").unwrap();
-        }
-        writeln!(out, "}}").unwrap();
-        writeln!(out).unwrap();
+        writeln!(out, "impl FluentNum {{").unwrap();
+        writeln!(out, "    pub fn eq_int(&self, rhs: i64) -> bool {{").unwrap();
+        writeln!(out, "        let v = self.0;").unwrap();
         writeln!(
             out,
-            "pub const {}: {} = {};",
-            sanitize_const(locale),
-            sn,
-            sn
+            "        v.is_finite() && v.fract() == 0.0 && v == rhs as f64"
         )
         .unwrap();
+        writeln!(out, "    }}").unwrap();
+        writeln!(out, "    pub fn operands(self) -> Operands {{").unwrap();
+        writeln!(out, "        let i = self.0.trunc() as u64;").unwrap();
+        writeln!(
+            out,
+            "        Operands {{ n: self.0, i, v: 0, w: 0, f: 0, t: 0 }}"
+        )
+        .unwrap();
+        writeln!(out, "    }}").unwrap();
+        writeln!(out, "}}").unwrap();
+        writeln!(out).unwrap();
+        writeln!(out, "pub struct Operands {{").unwrap();
+        writeln!(out, "    pub n: f64,").unwrap();
+        writeln!(out, "    pub i: u64,").unwrap();
+        writeln!(out, "    pub v: u8,").unwrap();
+        writeln!(out, "    pub w: u8,").unwrap();
+        writeln!(out, "    pub f: u64,").unwrap();
+        writeln!(out, "    pub t: u64,").unwrap();
+        writeln!(out, "}}").unwrap();
+        writeln!(out).unwrap();
+        writeln!(out, "impl core::fmt::Display for FluentNum {{").unwrap();
+        writeln!(
+            out,
+            "    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {{"
+        )
+        .unwrap();
+        writeln!(out, "        write!(f, \"{{}}\", self.0)").unwrap();
+        writeln!(out, "    }}").unwrap();
+        writeln!(out, "}}").unwrap();
         writeln!(out).unwrap();
     }
 
     fn emit_runtime(&self, locales: &[&String], out: &mut String) {
-        let primary = sanitize_const(&self.primary);
         writeln!(out, "use std::sync::atomic::{{AtomicU8, Ordering}};").unwrap();
         writeln!(out).unwrap();
-        writeln!(out, "static LOCALE_ID: AtomicU8 = AtomicU8::new(0);").unwrap();
+        writeln!(out, "use unic_langid::{{LanguageIdentifier, langid}};").unwrap();
         writeln!(out).unwrap();
-        writeln!(out, "pub fn get_locale() -> &'static (dyn I18n + Sync) {{").unwrap();
-        writeln!(out, "    match LOCALE_ID.load(Ordering::Acquire) {{").unwrap();
-        for (idx, locale) in locales.iter().enumerate() {
-            if **locale != self.primary {
-                writeln!(out, "        {} => &{},", idx, sanitize_const(locale)).unwrap();
-            }
-        }
-        writeln!(out, "        _ => &{},", primary).unwrap();
-        writeln!(out, "    }}").unwrap();
-        writeln!(out, "}}").unwrap();
+        writeln!(out, "static LOCALE_ID: AtomicU8 = AtomicU8::new(0);").unwrap();
         writeln!(out).unwrap();
         writeln!(out, "pub enum Lang {{").unwrap();
         for locale in locales {
             writeln!(out, "    {},", sanitize_upper(locale)).unwrap();
         }
+        writeln!(out, "}}").unwrap();
+        writeln!(out).unwrap();
+        writeln!(out, "impl From<Lang> for LanguageIdentifier {{").unwrap();
+        writeln!(out, "    fn from(l: Lang) -> Self {{").unwrap();
+        writeln!(out, "        match l {{").unwrap();
+        for locale in locales {
+            writeln!(
+                out,
+                "            Lang::{} => langid!(\"{}\"),",
+                sanitize_upper(locale),
+                locale
+            )
+            .unwrap();
+        }
+        writeln!(out, "        }}").unwrap();
+        writeln!(out, "    }}").unwrap();
+        writeln!(out, "}}").unwrap();
+        writeln!(out).unwrap();
+        writeln!(out, "pub fn get_locale() -> Lang {{").unwrap();
+        writeln!(out, "    match LOCALE_ID.load(Ordering::Acquire) {{").unwrap();
+        for (idx, locale) in locales.iter().enumerate() {
+            writeln!(out, "        {} => Lang::{},", idx, sanitize_upper(locale)).unwrap();
+        }
+        writeln!(out, "        _ => Lang::{},", sanitize_upper(&self.primary)).unwrap();
+        writeln!(out, "    }}").unwrap();
         writeln!(out, "}}").unwrap();
         writeln!(out).unwrap();
         writeln!(out, "pub fn set_lang(lang: Lang) {{").unwrap();
@@ -474,7 +508,6 @@ impl Generator {
         writeln!(out, "    }};").unwrap();
         writeln!(out, "    LOCALE_ID.store(id, Ordering::Release);").unwrap();
         writeln!(out, "}}").unwrap();
-        writeln!(out).unwrap();
     }
 }
 

@@ -4,6 +4,8 @@
 
 Compile-time conversion of Fluent (.ftl) translation files to type-safe Rust functions. No parser, no hash table at runtime.
 
+**This library is under active development and is not yet stable. ANY API MAY CHANGE WITHOUT NOTICE!**
+
 [![rust 1.70+](https://img.shields.io/badge/rust-1.70%2B-orange?style=flat&logo=rust)](https://www.rust-lang.org)
 [![license](https://img.shields.io/badge/license-MIT%20%7C%20Unicode--3.0-blue?style=flat)](#license)
 

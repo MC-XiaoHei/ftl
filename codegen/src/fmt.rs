@@ -59,7 +59,7 @@ pub fn gen_fn_decl(name: &str, params: &BTreeMap<String, ParamType>, with_self: 
             safe_pname,
             match ptype {
                 ParamType::Str => "&str",
-                ParamType::Num => "usize",
+                ParamType::Num => "impl Into<FluentNum>",
             }
         )
         .unwrap();
@@ -94,12 +94,7 @@ fn capacity_expr(elements: &[Element], params: &BTreeMap<String, ParamType>) -> 
                 }
                 let safe_name = sanitize(name);
                 parts.push(match params.get(name).unwrap_or(&ParamType::Str) {
-                    ParamType::Num => {
-                        format!(
-                            "if {n} == 0 {{ 1 }} else {{ {n}.ilog10() as usize + 1 }}",
-                            n = safe_name
-                        )
-                    }
+                    ParamType::Num => "32".to_string(),
                     ParamType::Str => format!("{}.len()", safe_name),
                 });
             }
@@ -158,6 +153,7 @@ fn emit_push_statements(
 fn gen_push_body(elements: &[Element], params: &BTreeMap<String, ParamType>) -> String {
     let mut code = String::new();
     writeln!(code, "    let cap = {};", capacity_expr(elements, params)).unwrap();
+    emit_num_convert(params, "    ", &mut code);
     writeln!(code, "    let mut s = String::with_capacity(cap);").unwrap();
     emit_push_statements(elements, params, "    ", &mut code);
     writeln!(code, "    s").unwrap();
@@ -184,26 +180,64 @@ fn gen_select_body(
     let safe_selector = sanitize(&selector);
 
     let mut code = String::new();
-    writeln!(code, "    match {} {{", safe_selector).unwrap();
-    for v in variants.iter().filter(|v| !v.default) {
+
+    if selector_type == &ParamType::Str {
+        // String selector — use match on &str
+        writeln!(code, "    match {} {{", safe_selector).unwrap();
+        for v in variants.iter().filter(|v| !v.default) {
+            writeln!(
+                code,
+                "        {} => {},",
+                variant_arm_pattern(&v.key, selector_type, locale, v.default),
+                variant_arm_body(&v.elements, params)
+            )
+            .unwrap();
+        }
+        for v in variants.iter().filter(|v| v.default) {
+            writeln!(
+                code,
+                "        {} => {},",
+                variant_arm_pattern(&v.key, selector_type, locale, v.default),
+                variant_arm_body(&v.elements, params)
+            )
+            .unwrap();
+        }
+        writeln!(code, "    }}").unwrap();
+    } else {
+        // Numeric selector — convert to FluentNum, use if/else with eq_int/operands
         writeln!(
             code,
-            "        {} => {},",
-            variant_arm_pattern(&v.key, selector_type, locale, v.default),
-            variant_arm_body(&v.elements, params)
+            "    let {}: FluentNum = {}.into();",
+            safe_selector, safe_selector
         )
         .unwrap();
+        let mut first_arm = true;
+        for v in variants.iter().filter(|v| !v.default) {
+            let cond = variant_to_cond(&safe_selector, &v.key, locale);
+            if first_arm {
+                writeln!(code, "    if {} {{", cond).unwrap();
+                first_arm = false;
+            } else {
+                writeln!(code, "    }} else if {} {{", cond).unwrap();
+            }
+            writeln!(
+                code,
+                "        return {};",
+                variant_arm_body(&v.elements, params)
+            )
+            .unwrap();
+        }
+        for v in variants.iter().filter(|v| v.default) {
+            writeln!(code, "    }} else {{").unwrap();
+            writeln!(
+                code,
+                "        return {};",
+                variant_arm_body(&v.elements, params)
+            )
+            .unwrap();
+        }
+        writeln!(code, "    }}").unwrap();
     }
-    for v in variants.iter().filter(|v| v.default) {
-        writeln!(
-            code,
-            "        {} => {},",
-            variant_arm_pattern(&v.key, selector_type, locale, v.default),
-            variant_arm_body(&v.elements, params)
-        )
-        .unwrap();
-    }
-    writeln!(code, "    }}").unwrap();
     code
 }
 
@@ -259,6 +293,34 @@ fn variant_arm_pattern(
     }
 }
 
+/// Generate an if-condition for a numeric variant using eq_int or CLDR operands.
+fn variant_to_cond(selector: &str, key: &KeyType, locale: &str) -> String {
+    match key {
+        KeyType::Num(val) => format!("{}.eq_int({})", selector, val),
+        KeyType::Ident(cat) => match plural_rule_or_fallback(locale, cat) {
+            Some("n == 0") => format!("{}.eq_int(0)", selector),
+            Some("n == 1") => format!("{}.eq_int(1)", selector),
+            Some("n == 2") => format!("{}.eq_int(2)", selector),
+            Some(rule) => {
+                // Replace `n` (standalone var) with `selector.operands().i`
+                let expr = rule.replace('n', &format!("{}.operands().i", selector));
+                expr
+            }
+            None => "false".to_string(),
+        },
+    }
+}
+
+/// Generate `.into()` shadowing lines for numeric params.
+fn emit_num_convert(params: &BTreeMap<String, ParamType>, indent: &str, code: &mut String) {
+    for (pname, ptype) in params {
+        if *ptype == ParamType::Num {
+            let safe = sanitize(pname);
+            writeln!(code, "{}let {}: FluentNum = {}.into();", indent, safe, safe).unwrap();
+        }
+    }
+}
+
 #[cfg(test)]
 #[cfg_attr(coverage, coverage(off))]
 mod tests {
@@ -306,7 +368,7 @@ mod tests {
         params.insert("count".into(), ParamType::Num);
         assert_eq!(
             gen_fn_decl("files", &params, false),
-            "files(count: usize) -> String"
+            "files(count: impl Into<FluentNum>) -> String"
         );
     }
 
@@ -322,10 +384,7 @@ mod tests {
         let mut params2 = BTreeMap::new();
         params2.insert("n".into(), ParamType::Num);
         let elems = [Element::VarRef("n".into())];
-        assert_eq!(
-            capacity_expr(&elems, &params2),
-            "if n == 0 { 1 } else { n.ilog10() as usize + 1 }"
-        );
+        assert_eq!(capacity_expr(&elems, &params2), "32");
 
         let mut params3 = BTreeMap::new();
         params3.insert("name".into(), ParamType::Str);
@@ -345,10 +404,7 @@ mod tests {
             Element::Text("yz".into()),
             Element::VarRef("b".into()),
         ];
-        assert_eq!(
-            capacity_expr(&elems, &params4),
-            "1 + a.len() + 2 + if b == 0 { 1 } else { b.ilog10() as usize + 1 }"
-        );
+        assert_eq!(capacity_expr(&elems, &params4), "1 + a.len() + 2 + 32");
     }
 
     #[test]
@@ -419,7 +475,7 @@ mod tests {
             Element::VarRef("count".into()),
         ];
         let code = generate_one_function("show_count", &elems, &params, "en");
-        assert!(code.contains("count: usize"));
+        assert!(code.contains("count: impl Into<FluentNum>"));
         assert!(code.contains("write!(&mut s, \"{}\", count).unwrap();"));
 
         let mut params = BTreeMap::new();
@@ -443,10 +499,9 @@ mod tests {
             ],
         }];
         let code = generate_one_function("files", &elems, &params, "en");
-        assert!(code.starts_with("pub fn files(count: usize) -> String {"));
-        assert!(code.contains("match count"));
-        assert!(code.contains("1 => \"1 file\".to_string()"));
-        assert!(code.contains("_ =>"));
+        assert!(code.starts_with("pub fn files(count: impl Into<FluentNum>) -> String {"));
+        assert!(code.contains("count: FluentNum = count.into()"));
+        assert!(code.contains("count.eq_int(1)"));
     }
 
     #[test]

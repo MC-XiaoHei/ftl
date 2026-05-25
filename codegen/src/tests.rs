@@ -59,10 +59,8 @@ fn generator_with_select_plural() {
 
     let gen = Generator::load(&dir, "en-US");
     let code = gen.generate();
-    assert!(code.contains("fn files(count: usize) -> String"));
-    assert!(code.contains("match count"));
-    assert!(code.contains("1 =>"));
-    assert!(code.contains("_ =>"));
+    assert!(code.contains("fn files(count: impl Into<FluentNum>)"));
+    assert!(code.contains("eq_int(1)"));
 
     let _ = fs::remove_dir_all(&dir);
 }
@@ -194,8 +192,8 @@ fn generator_with_numeric_variant_key() {
 
     let gen = Generator::load(&dir, "en-US");
     let code = gen.generate();
-    assert!(code.contains("0 =>"));
-    assert!(code.contains("1 =>"));
+    assert!(code.contains("eq_int(0)"));
+    assert!(code.contains("eq_int(1)"));
 
     let _ = fs::remove_dir_all(&dir);
 }
@@ -217,8 +215,11 @@ fn emit_runtime_generates_lang_enum_and_switch() {
     let code = gen.generate();
     assert!(code.contains("static LOCALE_ID: AtomicU8"));
     assert!(code.contains("pub fn set_lang"));
+    assert!(code.contains("macro_rules! t"));
     assert!(code.contains("pub fn get_locale"));
-    assert!(code.contains("Lang::DeDe => 0"));
+    assert!(code.contains("pub fn set_lang"));
+    assert!(code.contains("impl From<Lang>"));
+    assert!(code.contains("LanguageIdentifier"));
 
     let _ = fs::remove_dir_all(&dir);
 }

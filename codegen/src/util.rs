@@ -36,7 +36,8 @@ pub fn sanitize_upper(s: &str) -> String {
         .collect()
 }
 
-pub fn sanitize_const(s: &str) -> String {
+#[cfg(test)]
+fn sanitize_const(s: &str) -> String {
     s.split(|c: char| c == '-' || c == '.')
         .filter(|p| !p.is_empty())
         .map(|part| part.to_uppercase())
