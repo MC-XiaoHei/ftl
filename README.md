@@ -114,7 +114,7 @@ welcome =
     }
 ```
 
-Numeric (`$count`) via `impl Into<FluentNum>` — accepts `usize`, `i64`, `f64`:
+Numeric (`$count`) via `impl Into<FluentNum>` — accepts all primitive numeric types:
 
 ```rust
 pub fn files(count: impl Into<FluentNum>) -> String {
