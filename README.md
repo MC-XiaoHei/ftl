@@ -13,9 +13,9 @@ Compile-time conversion of Fluent (.ftl) translation files to type-safe Rust fun
 
 Test Environment: AMD AI 9 H 365, `cargo bench -p example`.
 
-- pure text: <500 ps
 - get locale: <500 ps
-- translate: <50 ns
+- pure text translate: <500 ps
+- complex translate: <50 ns
 
 ## Limitations
 
@@ -57,6 +57,9 @@ for a full walkthrough).  Unsupported features:
 ```toml
 [build-dependencies]
 ftl-codegen = "0.1"
+
+[dependencies]
+unic-langid = { version = "0.9", features = ["unic-langid-macros"] }
 ```
 
 ```rust
@@ -115,7 +118,7 @@ pub fn hello(name: &str) -> String {
 }
 ```
 
-**Select (plural) -> `match`**
+**Select (plural)**
 
 ```fluent
 files =
@@ -126,19 +129,18 @@ files =
 ```
 
 ```rust
-pub fn files(count: usize) -> String {
-    match count {
-        1 => "1 file".to_string(),
-        _ => {
-            let cap = if count == 0 { 1 } else { count.ilog10() as usize + 1 } + 6;
-            let mut s = String::with_capacity(cap);
-            write!(&mut s, "{}", count).unwrap();
-            s.push_str(" files");
-            s
-        }
+pub fn files(count: impl Into<FluentNum>) -> String {
+    let count: FluentNum = count.into();
+    if count.eq_int(1) {
+        return "1 file".to_string();
     }
+    let mut s = String::with_capacity(32);
+    write!(s, "{count} files").unwrap();
+    s
 }
 ```
+
+Accepts any numeric type — `vec.len()`, `42_i64`, `3.14_f64` — all work directly.
 
 **String select -> `match` with `&str` keys**
 
@@ -239,6 +241,36 @@ save =
 ```rust
 pub fn save__label() -> &'static str { "Save" }
 pub fn save__tooltip() -> &'static str { "Save current file" }
+```
+
+**Inline attribute reference**
+
+```fluent
+msg = Hello
+    .name = World
+greeting = { msg.name }!
+```
+
+```rust
+pub fn greeting() -> &'static str { "World!" }
+```
+
+**Term attribute select (compile-time resolved)**
+
+```fluent
+-brand = Aurora
+    .gender = feminine
+-greeting =
+    { -brand.gender ->
+        [masculine] Mr.
+        [feminine] Ms.
+       *[other] Mx.
+    }
+title = Title: { -greeting }
+```
+
+```rust
+pub fn title() -> &'static str { "Title: Ms." }
 ```
 
 ## License
