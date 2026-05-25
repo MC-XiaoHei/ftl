@@ -73,6 +73,15 @@ attr-ref-demo = Placeholder: { login-input.placeholder }
 -brand-aurora = Aurora
     .gender = feminine
 
+# Term attribute select: resolves { -term.attr } at compile time
+-brand-gender =
+    { -brand-aurora.gender ->
+        [masculine] Mr.
+        [feminine] Ms.
+       *[other] Mx.
+    }
+attr-select-demo = Title: { -brand-gender }
+
 ## 10. Select Expressions (plurals / variants)
 files =
     { $count ->
@@ -134,25 +143,9 @@ settings-page = Settings Page
 #   *[other] You finished { $pos }th
 # }
 
-# 12e. Term attribute reference `-term.attr` — silently drops .attr
-# -brand-aurora = Aurora
-#     .gender = feminine
-# update-status =
-#     { -brand-aurora.gender ->
-#         [masculine] { -brand-aurora } has been updated.
-#         [feminine] { -brand-aurora } has been updated.
-#        *[other] { -brand-aurora } has been updated.
-#     }
-
-# 12f. Positional term arguments — panic: "not supported for '-'"
+# 12e. Positional term arguments — panic: "not supported for '-'"
 # -greet = Hello, { $name }!
 # say-hi = { -greet("World") }
-
-# 12g. Non-variable selector — panic: "Select selector must be a variable"
-# always-other = { 42 ->
-#     [42] exactly forty-two
-#    *[other] something else
-# }
 
 # 12h. Partially-formatted variables (FluentDateTime / FluentNumber)
 #      No special .ftl syntax; the developer wraps the value at the API level.

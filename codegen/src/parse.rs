@@ -656,7 +656,7 @@ impl<'a> Resolver<'a> {
                     let r = self.resolve_attribute(&flat);
                     out.extend(r.elements.clone());
                 }
-                Element::TermRef { name, args } => {
+                Element::TermRef { name, args, .. } => {
                     let bindings = args
                         .iter()
                         .map(|(k, v)| (k.clone(), self.resolve_argument_value(v)))
@@ -677,6 +677,37 @@ impl<'a> Resolver<'a> {
                         selector: selector.clone(),
                         variants: vs,
                     });
+                }
+                Element::TermAttrSelect {
+                    term,
+                    attr,
+                    variants,
+                } => {
+                    // Resolve the term attribute value at compile time
+                    let flat = flatten_attr_name(term, attr);
+                    let r = self.resolve_attribute(&flat);
+                    // The attribute should resolve to pure text
+                    let attr_value: String = r
+                        .elements
+                        .iter()
+                        .filter_map(|e| {
+                            if let Element::Text(t) = e {
+                                Some(t.as_str())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    // Find matching variant by key
+                    let matched = variants.iter().find(|v| match &v.key {
+                        KeyType::Ident(ident) => ident == &attr_value,
+                        KeyType::Num(num) => num == &attr_value,
+                    });
+                    if let Some(variant) = matched {
+                        out.extend(self.resolve_elements(&variant.elements));
+                    } else if let Some(default) = variants.iter().find(|v| v.default) {
+                        out.extend(self.resolve_elements(&default.elements));
+                    }
                 }
             }
         }
@@ -717,7 +748,7 @@ impl<'a> Resolver<'a> {
                     );
                 }
             }
-            Element::TermRef { name, args } => {
+            Element::TermRef { name, args, .. } => {
                 let bindings = args
                     .iter()
                     .map(|(k, v)| (k.clone(), self.resolve_argument_value(v)))
@@ -732,7 +763,9 @@ impl<'a> Resolver<'a> {
                     );
                 }
             }
-            Element::Select { .. } => panic!("Term argument cannot be a select expression"),
+            Element::Select { .. } | Element::TermAttrSelect { .. } => {
+                panic!("Term argument cannot be a select expression")
+            }
         }
     }
     fn lookup_bound_var(&self, name: &str) -> Option<Element> {
@@ -800,6 +833,28 @@ fn convert_element(e: &PatternElement<&str>) -> Element {
     }
 }
 
+/// Like `convert_elements` but returns a single `Element` by folding adjacent text.
+/// Used for literal selectors where the result is inlined at compile time.
+fn convert_collected(elems: Vec<Element>) -> Element {
+    let mut folded = fold_text(elems);
+    if folded.is_empty() {
+        Element::Text(String::new())
+    } else if folded.len() == 1 {
+        folded.swap_remove(0)
+    } else {
+        // Multiple non-text elements (e.g. VarRef + Text) — wrap as select with
+        // a single default variant so the codegen generates code for it.
+        Element::Select {
+            selector: "_resolved_literal".into(),
+            variants: vec![Variant {
+                key: KeyType::Ident("other".into()),
+                elements: folded,
+                default: true,
+            }],
+        }
+    }
+}
+
 fn convert_expression(expr: &Expression<&str>) -> Element {
     match expr {
         Expression::Inline(inline) => match inline {
@@ -814,7 +869,11 @@ fn convert_expression(expr: &Expression<&str>) -> Element {
                     Element::MessageRef(id.name.to_string())
                 }
             }
-            InlineExpression::TermReference { id, arguments, .. } => {
+            InlineExpression::TermReference {
+                id,
+                attribute,
+                arguments,
+            } => {
                 let mut args_map = BTreeMap::new();
                 if let Some(arguments) = arguments {
                     for arg in &arguments.named {
@@ -832,6 +891,7 @@ fn convert_expression(expr: &Expression<&str>) -> Element {
                 }
                 Element::TermRef {
                     name: id.name.to_string(),
+                    attribute: attribute.as_ref().map(|a| a.name.to_string()),
                     args: args_map,
                 }
             }
@@ -840,11 +900,46 @@ fn convert_expression(expr: &Expression<&str>) -> Element {
             other => panic!("Unsupported expression: {:?}", other),
         },
         Expression::Select { selector, variants } => {
-            let name = match selector {
-                InlineExpression::VariableReference { id } => id.name.to_string(),
-                other => panic!("Select selector must be a variable: {:?}", other),
+            let (selector_str, is_literal) = match selector {
+                InlineExpression::VariableReference { id } => (id.name.to_string(), false),
+                InlineExpression::NumberLiteral { value } => (value.to_string(), true),
+                InlineExpression::StringLiteral { value } => (value.to_string(), true),
+                InlineExpression::TermReference {
+                    id,
+                    attribute: Some(attr),
+                    ..
+                } => {
+                    // Term attribute reference: resolve at compile time.
+                    // Create a special element and return early.
+                    let vs = variants
+                        .iter()
+                        .map(|v| {
+                            let key = match &v.key {
+                                VariantKey::Identifier { name } => KeyType::Ident(name.to_string()),
+                                VariantKey::NumberLiteral { value } => {
+                                    KeyType::Num(value.to_string())
+                                }
+                            };
+                            Variant {
+                                key,
+                                elements: convert_elements(&v.value.elements),
+                                default: v.default,
+                            }
+                        })
+                        .collect();
+                    return Element::TermAttrSelect {
+                        term: id.name.to_string(),
+                        attr: attr.name.to_string(),
+                        variants: vs,
+                    };
+                }
+                other => panic!(
+                    "Select selector must be a variable, number, or string: {:?}",
+                    other
+                ),
             };
-            let vs = variants
+
+            let vs: Vec<Variant> = variants
                 .iter()
                 .map(|v| {
                     let key = match &v.key {
@@ -858,8 +953,26 @@ fn convert_expression(expr: &Expression<&str>) -> Element {
                     }
                 })
                 .collect();
+
+            // Literal selectors (number/string constants) are resolved
+            // at compile time — inline the matching variant directly.
+            if is_literal {
+                let matched = vs.iter().find(|v| match &v.key {
+                    KeyType::Num(val) => val == &selector_str,
+                    KeyType::Ident(ident) => ident == &selector_str,
+                });
+                if let Some(variant) = matched {
+                    return convert_collected(variant.elements.clone());
+                }
+                // No exact match — use default variant
+                if let Some(variant) = vs.iter().find(|v| v.default) {
+                    return convert_collected(variant.elements.clone());
+                }
+                panic!("Select expression has no matching variant and no default");
+            }
+
             Element::Select {
-                selector: name,
+                selector: selector_str,
                 variants: vs,
             }
         }
@@ -881,7 +994,11 @@ fn convert_inline_expression(expr: &InlineExpression<&str>) -> Element {
                 Element::MessageRef(id.name.to_string())
             }
         }
-        InlineExpression::TermReference { id, arguments, .. } => {
+        InlineExpression::TermReference {
+            id,
+            attribute,
+            arguments,
+        } => {
             let mut args_map = BTreeMap::new();
             if let Some(arguments) = arguments {
                 for arg in &arguments.named {
@@ -899,6 +1016,7 @@ fn convert_inline_expression(expr: &InlineExpression<&str>) -> Element {
             }
             Element::TermRef {
                 name: id.name.to_string(),
+                attribute: attribute.as_ref().map(|a| a.name.to_string()),
                 args: args_map,
             }
         }

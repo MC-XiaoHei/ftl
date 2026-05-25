@@ -73,6 +73,15 @@ attr-ref-demo = 占位符：{ login-input.placeholder }
 -brand-aurora = 极光
     .gender = feminine
 
+# 术语属性选择：编译时解析 { -term.attr }
+-brand-gender =
+    { -brand-aurora.gender ->
+        [masculine] 先生
+        [feminine] 女士
+       *[other] 用户
+    }
+attr-select-demo = 称呼：{ -brand-gender }
+
 ## 10. 选择表达式（复数 / 变体）
 files =
     { $count ->
@@ -134,25 +143,9 @@ settings-page = 设置页面
 #   *[other] 第 { $pos } 名
 # }
 
-# 12e. 术语属性引用 `-term.attr` — 静默丢弃 .attr
-# -brand-aurora = 极光
-#     .gender = feminine
-# update-status =
-#     { -brand-aurora.gender ->
-#         [masculine] { -brand-aurora } 已更新。
-#         [feminine] { -brand-aurora } 已更新。
-#        *[other] { -brand-aurora } 已更新。
-#     }
-
-# 12f. 位置参数术语 — panic: "not supported for '-'"
+# 12e. 位置参数术语 — panic: "not supported for '-'"
 # -greet = 你好，{ $name }！
 # say-hi = { -greet("世界") }
-
-# 12g. 非变量选择器 — panic: "Select selector must be a variable"
-# always-other = { 42 ->
-#     [42] 正好四十二
-#    *[other] 其他
-# }
 
 # 12h. 部分格式化变量（FluentDateTime / FluentNumber）
 #      无特殊 .ftl 语法；开发者在 API 层包装值。

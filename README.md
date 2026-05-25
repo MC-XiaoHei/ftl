@@ -30,12 +30,8 @@ Currently, only a subset of Fluent syntax is supported (see example `.ftl` files
 for a full walkthrough).  Unsupported features:
 
 - Fluent built-in functions (`NUMBER()`, `DATETIME()`, etc.)
-- Positional term arguments
 - Partially-formatted variables (`FluentDateTime` / `FluentNumber`)
-- Function calls as selectors
-- Term attribute references (`-term.attr`)
-- Non-variable selectors (e.g. `{ 42 -> ... }`)
-- Ordinal plural via `NUMBER(…, type: "ordinal")`
+- Positional term arguments
 
 **Select expressions**
 

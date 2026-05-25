@@ -73,6 +73,15 @@ attr-ref-demo = プレースホルダー：{ login-input.placeholder }
 -brand-aurora = オーロラ
     .gender = feminine
 
+# 用語属性の選択：{ -term.attr } をコンパイル時に解決
+-brand-gender =
+    { -brand-aurora.gender ->
+        [masculine] 様
+        [feminine] 様
+       *[other] 様
+    }
+attr-select-demo = 敬称：{ -brand-gender }
+
 ## 10. 選択式（複数形 / バリアント）
 files =
     { $count ->
@@ -134,25 +143,9 @@ settings-page = 設定ページ
 #   *[other] { $pos }位
 # }
 
-# 12e. 用語属性参照 `-term.attr` — .attr は無視される
-# -brand-aurora = オーロラ
-#     .gender = feminine
-# update-status =
-#     { -brand-aurora.gender ->
-#         [masculine] { -brand-aurora } は更新されました。
-#         [feminine] { -brand-aurora } は更新されました。
-#        *[other] { -brand-aurora } は更新されました。
-#     }
-
-# 12f. 位置引数の用語 — panic: "not supported for '-'"
+# 12e. 位置引数の用語 — panic: "not supported for '-'"
 # -greet = こんにちは、{ $name }！
 # say-hi = { -greet("世界") }
-
-# 12g. 非変数セレクター — panic: "Select selector must be a variable"
-# always-other = { 42 ->
-#     [42] 正確に42
-#    *[other] その他
-# }
 
 # 12h. 部分フォーマット変数（FluentDateTime / FluentNumber）
 #      特別な .ftl 構文は不要；API レベルで値をラップ。

@@ -37,7 +37,15 @@ pub enum Element {
     },
     TermRef {
         name: String,
+        attribute: Option<String>,
         args: BTreeMap<String, Element>,
+    },
+    /// Term attribute reference used as a select selector.
+    /// Resolved at compile time in the Resolver.
+    TermAttrSelect {
+        term: String,
+        attr: String,
+        variants: Vec<Variant>,
     },
     Select {
         selector: String,

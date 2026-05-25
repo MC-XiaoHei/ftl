@@ -104,9 +104,10 @@ fn capacity_expr(elements: &[Element], params: &BTreeMap<String, ParamType>) -> 
                 });
             }
             Element::Select { .. } => unreachable!(),
-            Element::MessageRef(_) | Element::TermRef { .. } | Element::AttributeRef { .. } => {
-                unreachable!()
-            }
+            Element::MessageRef(_)
+            | Element::TermRef { .. }
+            | Element::AttributeRef { .. }
+            | Element::TermAttrSelect { .. } => unreachable!(),
         }
     }
     if acc > 0 {
@@ -146,9 +147,10 @@ fn emit_push_statements(
                 }
             }
             Element::Select { .. } => unreachable!(),
-            Element::MessageRef(_) | Element::TermRef { .. } | Element::AttributeRef { .. } => {
-                unreachable!()
-            }
+            Element::MessageRef(_)
+            | Element::TermRef { .. }
+            | Element::AttributeRef { .. }
+            | Element::TermAttrSelect { .. } => unreachable!(),
         }
     }
 }

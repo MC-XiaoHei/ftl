@@ -341,23 +341,97 @@ fn inline_literal_string_works() {
 }
 
 #[test]
-#[should_panic(expected = "Select selector must be a variable")]
-fn convert_expression_panics_on_select_with_number_selector() {
+fn literal_number_selector_resolved_at_compile_time() {
     use crate::parse::Generator;
     use std::fs;
     use std::path::PathBuf;
 
     let dir =
-        PathBuf::from(std::env::temp_dir()).join(format!("ftl_test_selnum_{}", std::process::id()));
+        PathBuf::from(std::env::temp_dir()).join(format!("ftl_test_litnum_{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     fs::write(
         dir.join("en-US.ftl"),
-        "x = { 42 ->\n    [one] val\n   *[other] val\n}\n",
+        "x = { 42 ->\n    [42] forty-two\n   *[other] other\n}\n",
     )
     .unwrap();
 
-    Generator::load(&dir, "en-US");
+    let gen = Generator::load(&dir, "en-US");
+    let code = gen.generate();
+    // 42 matches [42] → should inline "forty-two" as pure text
+    assert!(code.contains("fn x() -> &'static str { \"forty-two\" }"));
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn literal_number_selector_uses_default_when_no_match() {
+    use crate::parse::Generator;
+    use std::fs;
+    use std::path::PathBuf;
+
+    let dir =
+        PathBuf::from(std::env::temp_dir()).join(format!("ftl_test_litdef_{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    // 99 doesn't match [42] → should use default variant
+    fs::write(
+        dir.join("en-US.ftl"),
+        "x = { 99 ->\n    [42] match\n   *[other] fallback\n}\n",
+    )
+    .unwrap();
+
+    let gen = Generator::load(&dir, "en-US");
+    let code = gen.generate();
+    assert!(code.contains("\"fallback\""));
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn literal_string_selector_resolved_at_compile_time() {
+    use crate::parse::Generator;
+    use std::fs;
+    use std::path::PathBuf;
+
+    let dir =
+        PathBuf::from(std::env::temp_dir()).join(format!("ftl_test_litstr_{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join("en-US.ftl"),
+        "x = { \"hello\" ->\n    [hello] greeting\n   *[other] other\n}\n",
+    )
+    .unwrap();
+
+    let gen = Generator::load(&dir, "en-US");
+    let code = gen.generate();
+    assert!(code.contains("\"greeting\""));
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn term_attribute_select_resolved_at_compile_time() {
+    use crate::parse::Generator;
+    use std::fs;
+    use std::path::PathBuf;
+
+    let dir = PathBuf::from(std::env::temp_dir())
+        .join(format!("ftl_test_termsel_{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join("en-US.ftl"),
+        "-brand = Aurora\n    .gender = feminine\n-greeting =\n    { -brand.gender ->\n        [masculine] Mr.\n        [feminine] Ms.\n       *[other] Mx.\n    }\nmsg = { -greeting }\n",
+    )
+    .unwrap();
+
+    let gen = Generator::load(&dir, "en-US");
+    let code = gen.generate();
+    assert!(code.contains("fn msg() -> &'static str { \"Ms.\" }"));
+
+    let _ = fs::remove_dir_all(&dir);
 }
 
 #[test]
