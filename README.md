@@ -45,18 +45,25 @@ unic-langid = { version = "0.9", features = ["unic-langid-macros"] }
 
 ```rust
 // build.rs
-use std::path::Path;
+fn main() {
+    println!("cargo:rerun-if-changed=locales");
 
-ftl_codegen::generate(
-    "locales",
-    Path::new(&std::env::var("OUT_DIR").unwrap()).join("i18n_gen.rs"),
-    "en-US",
-);
+    ftl_codegen::generator()
+        .locales_dir("locales")
+        .default_lang("en-US")
+        .module_path("i18n")
+        .output_path(Path::new(&env::var("OUT_DIR").unwrap()).join("i18n_gen.rs"))
+        .generate();
+}
 ```
 
 ```rust
 // src/main.rs
-include!(concat!(env!("OUT_DIR"), "/i18n_gen.rs"));
+use crate::i18n::*;
+ 
+pub mod i18n {
+    include!(concat!(env!("OUT_DIR"), "/i18n_gen.rs"));
+}
 
 fn main() {
     set_lang(Lang::EnUs);
