@@ -56,6 +56,10 @@ welcome-term = { -brand-name } へようこそ。
 about-brand = { -brand(case: "genitive") } について。
 update-brand = { -brand } は更新されました。
 
+# 位置引数は用語の自由変数に順にバインドされる
+-greet = { $greeting }、{ $name }！
+pos-args-demo = { -greet("やあ", "アリス") }
+
 ## 8. メッセージの属性
 login-input = デフォルト値
     .placeholder = メールアドレスを入力
@@ -117,21 +121,21 @@ finish-place =
        *[other] { $place }位になりました！
     }
 
-## 12. 未サポートの機能
+## 11. 未サポートの機能
 
-# 12a. NUMBER() / 12b. DATETIME()
+# 11a. NUMBER() / 11b. DATETIME()
 # dpi-ratio = DPI 比率は { NUMBER($ratio, minimumFractionDigits: 2) } です
 # today-is = 今日は { DATETIME($date) } です
 # full-date = { DATETIME($date, month: "long", year: "numeric", day: "numeric") }
 
-# 12c. 関数呼び出しをセレクターに使用
+# 11c. 関数呼び出しをセレクターに使用
 # your-score =
 #     { NUMBER($score, minimumFractionDigits: 1) ->
 #         [0.0]   0点でした。
 #        *[other] { NUMBER($score, minimumFractionDigits: 1) } 点でした。
 #     }
 
-# 12d. NUMBER(…, type: "ordinal") による序数
+# 11d. NUMBER(…, type: "ordinal") による序数
 # your-rank = { NUMBER($pos, type: "ordinal") ->
 #    [1] 1位！
 #    [one] { $pos }位
@@ -140,9 +144,5 @@ finish-place =
 #   *[other] { $pos }位
 # }
 
-# 12e. 位置引数の用語
-# -greet = こんにちは、{ $name }！
-# say-hi = { -greet("世界") }
-
-# 12f. 部分フォーマット変数（FluentDateTime / FluentNumber）
+# 11e. 部分フォーマット変数（FluentDateTime / FluentNumber）
 # today = 今日は { $day } です

@@ -39,6 +39,7 @@ pub enum Element {
         name: String,
         attribute: Option<String>,
         args: BTreeMap<String, Element>,
+        positional: Vec<Element>,
     },
     /// Term attribute reference as select selector, resolved at compile time.
     TermAttrSelect {

@@ -19,11 +19,10 @@ Test Environment: AMD AI 9 H 365, `cargo bench -p example`.
 
 ## Limitations
 
-- Positional term arguments are currently unsupported
-- Fluent built-in functions (`NUMBER()`, `DATETIME()`, etc.) are currently unsupported
-- Function calls as selectors are currently unsupported
+- Fluent built-in functions (`NUMBER()`, `DATETIME()`, etc.) are unsupported
 - Partially-formatted variables (`FluentDateTime` / `FluentNumber`) are unsupported
-- Same variable used with different types (e.g. both `&str` and numeric) is unsupported
+- Function calls as selectors are unsupported
+- Unassigned variables with different types (e.g. both `&str` and numeric) are unsupported
 - Non-primary locales must be subsets of the primary locale
 - Missing messages fallback to primary locale at build time, fallback chain is unsupported
 

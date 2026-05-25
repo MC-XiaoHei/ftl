@@ -56,6 +56,10 @@ welcome-term = 欢迎使用 { -brand-name }。
 about-brand = 关于 { -brand(case: "genitive") }。
 update-brand = { -brand } 已更新。
 
+# 位置参数按顺序绑定到术语的自由变量
+-greet = { $greeting }，{ $name }！
+pos-args-demo = { -greet("嗨", "爱丽丝") }
+
 ## 8. 消息属性
 login-input = 默认值
     .placeholder = 输入您的邮箱
@@ -117,21 +121,21 @@ finish-place =
        *[other] 您获得了第 { $place } 名！
     }
 
-## 12. 不支持的功能
+## 11. 不支持的功能
 
-# 12a. NUMBER() / 12b. DATETIME()
+# 11a. NUMBER() / 11b. DATETIME()
 # dpi-ratio = 您的 DPI 比率是 { NUMBER($ratio, minimumFractionDigits: 2) }
 # today-is = 今天是 { DATETIME($date) }
 # full-date = { DATETIME($date, month: "long", year: "numeric", day: "numeric") }
 
-# 12c. 函数调用作选择器
+# 11c. 函数调用作选择器
 # your-score =
 #     { NUMBER($score, minimumFractionDigits: 1) ->
 #         [0.0]   您得了零分。
 #        *[other] 您得了 { NUMBER($score, minimumFractionDigits: 1) } 分。
 #     }
 
-# 12d. 通过 NUMBER(…, type: "ordinal") 的序数
+# 11d. 通过 NUMBER(…, type: "ordinal") 的序数
 # your-rank = { NUMBER($pos, type: "ordinal") ->
 #    [1] 第一名！
 #    [one] 第 { $pos } 名
@@ -140,9 +144,5 @@ finish-place =
 #   *[other] 第 { $pos } 名
 # }
 
-# 12e. 位置参数术语
-# -greet = 你好，{ $name }！
-# say-hi = { -greet("世界") }
-
-# 12f. 部分格式化变量（FluentDateTime / FluentNumber）
+# 11e. 部分格式化变量（FluentDateTime / FluentNumber）
 # today = 今天是 { $day }

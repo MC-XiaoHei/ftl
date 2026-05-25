@@ -56,6 +56,10 @@ welcome-term = Welcome to { -brand-name }.
 about-brand = About { -brand(case: "genitive") }.
 update-brand = { -brand } has been updated.
 
+# Positional arguments bind to term's free variables in order
+-greet = { $greeting }, { $name }!
+pos-args-demo = { -greet("Hi", "Alice") }
+
 ## 8. Attributes on Messages
 login-input = Default value
     .placeholder = Enter your email
@@ -117,21 +121,21 @@ finish-place =
        *[other] You finished { $place }th!
     }
 
-## 12. Unsupported Features
+## 11. Unsupported Features
 
-# 12a. NUMBER() / 12b. DATETIME()
+# 11a. NUMBER() / 11b. DATETIME()
 # dpi-ratio = Your DPI ratio is { NUMBER($ratio, minimumFractionDigits: 2) }
 # today-is = Today is { DATETIME($date) }
 # full-date = { DATETIME($date, month: "long", year: "numeric", day: "numeric") }
 
-# 12c. Function call as selector
+# 11c. Function call as selector
 # your-score =
 #     { NUMBER($score, minimumFractionDigits: 1) ->
 #         [0.0]   You scored zero points.
 #        *[other] You scored { NUMBER($score, minimumFractionDigits: 1) } points.
 #     }
 
-# 12d. Ordinal via NUMBER(…, type: "ordinal")
+# 11d. Ordinal via NUMBER(…, type: "ordinal")
 # your-rank = { NUMBER($pos, type: "ordinal") ->
 #    [1] You finished first!
 #    [one] You finished { $pos }st
@@ -140,9 +144,5 @@ finish-place =
 #   *[other] You finished { $pos }th
 # }
 
-# 12e. Positional term arguments
-# -greet = Hello, { $name }!
-# say-hi = { -greet("World") }
-
-# 12f. Partially-formatted variables (FluentDateTime / FluentNumber)
+# 11e. Partially-formatted variables (FluentDateTime / FluentNumber)
 # today = Today is { $day }

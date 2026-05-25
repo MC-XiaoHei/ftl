@@ -508,6 +508,31 @@ fn parameterized_term_expands_with_arguments() {
 }
 
 #[test]
+fn positional_term_argument_resolved_by_order() {
+    use crate::parse::Generator;
+    use std::fs;
+    use std::path::PathBuf;
+
+    let dir =
+        PathBuf::from(std::env::temp_dir()).join(format!("ftl_test_pos_{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+
+    fs::write(
+        dir.join("en-US.ftl"),
+        "-greet = { $greeting }, { $name }!\nmsg = { -greet(\"Hi\", \"Alice\") }\n",
+    )
+    .unwrap();
+
+    let gen = Generator::load(&dir, "en-US");
+    let code = gen.generate();
+    // $greeting ← "Hi", $name ← "Alice"
+    assert!(code.contains("fn msg() -> &'static str { \"Hi, Alice!\" }"));
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn free_variables_propagate_through_message_references() {
     use crate::parse::Generator;
     use std::fs;

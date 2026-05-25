@@ -10,6 +10,7 @@ fn print_locale() {
     println!("  welcome-user = {}", t!(welcome_user("Jane")));
     println!("  welcome-term = {}", t!(welcome_term()));
     println!("  about-brand = {}", t!(about_brand("genitive")));
+    println!("  pos-args-demo = {}", t!(pos_args_demo()));
     println!(
         "  update-brand (nominative) = {}",
         t!(update_brand("nominative"))

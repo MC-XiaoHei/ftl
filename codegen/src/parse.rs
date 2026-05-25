@@ -689,11 +689,49 @@ impl<'a> Resolver<'a> {
                     let r = self.resolve_attribute(&flat);
                     out.extend(r.elements.clone());
                 }
-                Element::TermRef { name, args, .. } => {
-                    let bindings = args
+                Element::TermRef {
+                    name,
+                    args,
+                    positional,
+                    ..
+                } => {
+                    // Collect free variables from term in source order
+                    let raw_term = self
+                        .entries
+                        .terms
+                        .get(name.as_str())
+                        .expect("undefined term reference");
+                    let free_vars: Vec<&str> = raw_term
+                        .elements
                         .iter()
-                        .map(|(k, v)| (k.clone(), self.resolve_argument_value(v)))
-                        .collect::<BTreeMap<_, _>>();
+                        .filter_map(|e| {
+                            if let Element::VarRef(v) = e {
+                                // Skip if already bound in env_stack
+                                if self.lookup_bound_var(v).is_none() {
+                                    Some(v.as_str())
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+
+                    let mut bindings = BTreeMap::new();
+                    // Positional args bind to free vars in order
+                    for (i, pos_val) in positional.iter().enumerate() {
+                        if let Some(var_name) = free_vars.get(i) {
+                            bindings.insert(
+                                (*var_name).to_string(),
+                                self.resolve_argument_value(pos_val),
+                            );
+                        }
+                    }
+                    // Named args override positional
+                    for (k, v) in args {
+                        bindings.insert(k.clone(), self.resolve_argument_value(v));
+                    }
                     let r = self.resolve_term_with_args(name, bindings);
                     out.extend(r.elements.clone());
                 }
@@ -903,17 +941,15 @@ fn convert_expression(expr: &Expression<&str>) -> Element {
                 arguments,
             } => {
                 let mut args_map = BTreeMap::new();
+                let mut positional_args = Vec::new();
                 if let Some(arguments) = arguments {
+                    for arg in &arguments.positional {
+                        positional_args.push(convert_inline_expression(arg));
+                    }
                     for arg in &arguments.named {
                         args_map.insert(
                             arg.name.name.to_string(),
                             convert_inline_expression(&arg.value),
-                        );
-                    }
-                    if !arguments.positional.is_empty() {
-                        panic!(
-                            "Positional term arguments are not supported for '-{}'",
-                            id.name
                         );
                     }
                 }
@@ -921,6 +957,7 @@ fn convert_expression(expr: &Expression<&str>) -> Element {
                     name: id.name.to_string(),
                     attribute: attribute.as_ref().map(|a| a.name.to_string()),
                     args: args_map,
+                    positional: positional_args,
                 }
             }
             InlineExpression::StringLiteral { value } => Element::Text(value.to_string()),
@@ -1028,17 +1065,15 @@ fn convert_inline_expression(expr: &InlineExpression<&str>) -> Element {
             arguments,
         } => {
             let mut args_map = BTreeMap::new();
+            let mut positional_args = Vec::new();
             if let Some(arguments) = arguments {
+                for arg in &arguments.positional {
+                    positional_args.push(convert_inline_expression(arg));
+                }
                 for arg in &arguments.named {
                     args_map.insert(
                         arg.name.name.to_string(),
                         convert_inline_expression(&arg.value),
-                    );
-                }
-                if !arguments.positional.is_empty() {
-                    panic!(
-                        "Positional term arguments are not supported for '-{}'",
-                        id.name
                     );
                 }
             }
@@ -1046,6 +1081,7 @@ fn convert_inline_expression(expr: &InlineExpression<&str>) -> Element {
                 name: id.name.to_string(),
                 attribute: attribute.as_ref().map(|a| a.name.to_string()),
                 args: args_map,
+                positional: positional_args,
             }
         }
         other => panic!(
