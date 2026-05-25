@@ -209,27 +209,20 @@ fn gen_select_body(
             safe_selector, safe_selector
         )
         .unwrap();
-        let mut first_arm = true;
+        writeln!(code, "    match *{} {{", safe_selector).unwrap();
         for v in variants.iter().filter(|v| !v.default) {
-            let cond = variant_to_cond(&safe_selector, &v.key, locale);
-            if first_arm {
-                writeln!(code, "    if {} {{", cond).unwrap();
-                first_arm = false;
-            } else {
-                writeln!(code, "    }} else if {} {{", cond).unwrap();
-            }
             writeln!(
                 code,
-                "        return {};",
+                "        {} => {},",
+                variant_arm_pattern_num(&v.key, locale),
                 variant_arm_body(&v.elements, params)
             )
             .unwrap();
         }
         for v in variants.iter().filter(|v| v.default) {
-            writeln!(code, "    }} else {{").unwrap();
             writeln!(
                 code,
-                "        return {};",
+                "        _ => {},",
                 variant_arm_body(&v.elements, params)
             )
             .unwrap();
@@ -291,24 +284,6 @@ fn variant_arm_pattern(
     }
 }
 
-/// Generate an if-condition for a numeric variant using eq_int or CLDR operands.
-fn variant_to_cond(selector: &str, key: &KeyType, locale: &str) -> String {
-    match key {
-        KeyType::Num(val) => format!("{}.eq_int({})", selector, val),
-        KeyType::Ident(cat) => match plural_rule_or_fallback(locale, cat) {
-            Some("n == 0") => format!("{}.eq_int(0)", selector),
-            Some("n == 1") => format!("{}.eq_int(1)", selector),
-            Some("n == 2") => format!("{}.eq_int(2)", selector),
-            Some(rule) => {
-                // Replace `n` (standalone var) with `selector.operands().i`
-                let expr = rule.replace('n', &format!("{}.operands().i", selector));
-                expr
-            }
-            None => "false".to_string(),
-        },
-    }
-}
-
 /// Generate `.into()` shadowing lines for numeric params.
 fn emit_num_convert(params: &BTreeMap<String, ParamType>, indent: &str, code: &mut String) {
     for (pname, ptype) in params {
@@ -316,6 +291,23 @@ fn emit_num_convert(params: &BTreeMap<String, ParamType>, indent: &str, code: &m
             let safe = sanitize(pname);
             writeln!(code, "{}let {}: FluentNum = {}.into();", indent, safe, safe).unwrap();
         }
+    }
+}
+
+/// Generate a match arm pattern for a numeric variant.
+fn variant_arm_pattern_num(key: &KeyType, locale: &str) -> String {
+    match key {
+        KeyType::Num(val) => format!("{}.0", val),
+        KeyType::Ident(cat) => match plural_rule_or_fallback(locale, cat) {
+            Some("n == 0") => "0.0".to_string(),
+            Some("n == 1") => "1.0".to_string(),
+            Some("n == 2") => "2.0".to_string(),
+            Some(rule) => {
+                let guard = rule.replace('n', "n").replace(" == ", " == ");
+                format!("n if {}", guard)
+            }
+            None => "false".to_string(),
+        },
     }
 }
 
@@ -499,7 +491,7 @@ mod tests {
         let code = generate_one_function("files", &elems, &params, "en");
         assert!(code.starts_with("pub fn files(count: impl Into<FluentNum>) -> String {"));
         assert!(code.contains("count: FluentNum = count.into()"));
-        assert!(code.contains("count.eq_int(1)"));
+        assert!(code.contains("1.0 =>"));
     }
 
     #[test]

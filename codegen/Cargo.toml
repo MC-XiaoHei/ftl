@@ -8,5 +8,6 @@ license = "MIT"
 
 [dependencies]
 fluent-syntax = "0.12"
+indoc = "2"
 serde_json = "1"
 unic-langid = "0.9.6"

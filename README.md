@@ -99,7 +99,7 @@ pub fn hello(name: &str) -> String {
 }
 ```
 
-**Select (plural)**
+**Select expressions -> `match` on numeric or `&str`**
 
 ```fluent
 files =
@@ -107,31 +107,26 @@ files =
         [one] 1 file
        *[other] { $count } files
     }
-```
-
-```rust
-pub fn files(count: impl Into<FluentNum>) -> String {
-    let count: FluentNum = count.into();
-    if count.eq_int(1) {
-        return "1 file".to_string();
-    }
-    let mut s = String::with_capacity(32);
-    write!(s, "{count} files").unwrap();
-    s
-}
-```
-
-Accepts any numeric type — `vec.len()`, `42_i64`, `3.14_f64` — all work directly.
-
-**String select -> `match` with `&str` keys**
-
-```fluent
 welcome =
     { $gender ->
         [male] Welcome, sir
        *[other] Welcome
     }
 ```
+
+Numeric (`$count`) via `impl Into<FluentNum>` — accepts `usize`, `i64`, `f64`:
+
+```rust
+pub fn files(count: impl Into<FluentNum>) -> String {
+    let count: FluentNum = count.into();
+    match *count {
+        1.0 => "1 file".to_string(),
+        _ => format!("{count} files"),
+    }
+}
+```
+
+String (`$gender`) via `&str`:
 
 ```rust
 pub fn welcome(gender: &str) -> String {
@@ -153,7 +148,7 @@ about = About { app-name }
 pub fn about() -> &'static str { "About Zed" }
 ```
 
-**Dynamic message reference inlining -> free variable propagation**
+**Dynamic message ref -> free variable propagation**
 
 ```fluent
 name = { $user }
@@ -182,7 +177,7 @@ welcome = Welcome to { -brand-name }
 pub fn welcome() -> &'static str { "Welcome to Zed" }
 ```
 
-**Parameterized term -> compile-time substitution**
+**Parameterized term -> compile-time inlined**
 
 ```fluent
 -brand-name = { $case } Zed
@@ -193,7 +188,7 @@ about = About { -brand-name(case: "Awesome") }
 pub fn about() -> &'static str { "About Awesome Zed" }
 ```
 
-**Parameterized term with variable argument**
+**Parameterized term with var -> Pre-allocated `String`**
 
 ```fluent
 -brand-name = { $case } Zed
@@ -224,7 +219,7 @@ pub fn save__label() -> &'static str { "Save" }
 pub fn save__tooltip() -> &'static str { "Save current file" }
 ```
 
-**Inline attribute reference**
+**Inline attribute ref -> compile-time inlined**
 
 ```fluent
 msg = Hello
@@ -236,7 +231,7 @@ greeting = { msg.name }!
 pub fn greeting() -> &'static str { "World!" }
 ```
 
-**Term attribute select (compile-time resolved)**
+**Term attribute select -> compile-time inlined**
 
 ```fluent
 -brand = Aurora

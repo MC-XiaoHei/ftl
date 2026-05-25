@@ -60,7 +60,7 @@ fn generator_with_select_plural() {
     let gen = Generator::load(&dir, "en-US");
     let code = gen.generate();
     assert!(code.contains("fn files(count: impl Into<FluentNum>)"));
-    assert!(code.contains("eq_int(1)"));
+    assert!(code.contains("1.0 =>"));
 
     let _ = fs::remove_dir_all(&dir);
 }
@@ -192,8 +192,8 @@ fn generator_with_numeric_variant_key() {
 
     let gen = Generator::load(&dir, "en-US");
     let code = gen.generate();
-    assert!(code.contains("eq_int(0)"));
-    assert!(code.contains("eq_int(1)"));
+    assert!(code.contains("0.0 =>"));
+    assert!(code.contains("1.0 =>"));
 
     let _ = fs::remove_dir_all(&dir);
 }

@@ -5,8 +5,8 @@ use std::path::Path;
 use std::str::FromStr;
 
 use fluent_syntax::ast::{self, Entry, Expression, InlineExpression, PatternElement, VariantKey};
-use fluent_syntax::parser;
-use fluent_syntax::parser::ParserError;
+use fluent_syntax::parser::{self, ParserError};
+use indoc::formatdoc;
 
 use crate::ast::*;
 use crate::diag::{report_diagnostics, Diag, DiagKind};
@@ -405,60 +405,105 @@ impl Generator {
     fn emit_fluent_num(&self, out: &mut String) {
         writeln!(out, "pub struct FluentNum(f64);").unwrap();
         writeln!(out).unwrap();
-        writeln!(out, "impl From<usize> for FluentNum {{").unwrap();
-        writeln!(out, "    fn from(v: usize) -> Self {{ Self(v as f64) }}").unwrap();
-        writeln!(out, "}}").unwrap();
-        writeln!(out, "impl From<i64> for FluentNum {{").unwrap();
-        writeln!(out, "    fn from(v: i64) -> Self {{ Self(v as f64) }}").unwrap();
-        writeln!(out, "}}").unwrap();
-        writeln!(out, "impl From<f64> for FluentNum {{").unwrap();
-        writeln!(out, "    fn from(v: f64) -> Self {{ Self(v) }}").unwrap();
-        writeln!(out, "}}").unwrap();
-        writeln!(out, "impl From<u64> for FluentNum {{").unwrap();
-        writeln!(out, "    fn from(v: u64) -> Self {{ Self(v as f64) }}").unwrap();
-        writeln!(out, "}}").unwrap();
-        writeln!(out, "impl From<i32> for FluentNum {{").unwrap();
-        writeln!(out, "    fn from(v: i32) -> Self {{ Self(v as f64) }}").unwrap();
-        writeln!(out, "}}").unwrap();
+        let from_types: [(&str, &str); 12] = [
+            ("usize", "v as f64"),
+            ("u64", "v as f64"),
+            ("u32", "v as f64"),
+            ("u16", "v as f64"),
+            ("u8", "v as f64"),
+            ("i64", "v as f64"),
+            ("i32", "v as f64"),
+            ("i16", "v as f64"),
+            ("i8", "v as f64"),
+            ("isize", "v as f64"),
+            ("f64", "v"),
+            ("f32", "v as f64"),
+        ];
+        for (ty, conv) in &from_types {
+            writeln!(
+                out,
+                "impl From<{ty}> for FluentNum {{ fn from(v: {ty}) -> Self {{ Self({conv}) }} }}"
+            )
+            .unwrap();
+        }
         writeln!(out).unwrap();
-        writeln!(out, "impl FluentNum {{").unwrap();
-        writeln!(out, "    pub fn eq_int(&self, rhs: i64) -> bool {{").unwrap();
-        writeln!(out, "        let v = self.0;").unwrap();
         writeln!(
             out,
-            "        v.is_finite() && v.fract() == 0.0 && v == rhs as f64"
+            "{}",
+            formatdoc!(
+                "
+                impl PartialEq<f64> for FluentNum {{
+                    fn eq(&self, other: &f64) -> bool {{
+                        self.0 == *other
+                    }}
+                }}
+            "
+            )
         )
         .unwrap();
-        writeln!(out, "    }}").unwrap();
-        writeln!(out, "    pub fn operands(self) -> Operands {{").unwrap();
-        writeln!(out, "        let i = self.0.trunc() as u64;").unwrap();
+        writeln!(out).unwrap();
         writeln!(
             out,
-            "        Operands {{ n: self.0, i, v: 0, w: 0, f: 0, t: 0 }}"
+            "{}",
+            formatdoc!(
+                "
+                impl std::ops::Deref for FluentNum {{
+                    type Target = f64;
+                    fn deref(&self) -> &f64 {{ &self.0 }}
+                }}
+            "
+            )
         )
         .unwrap();
-        writeln!(out, "    }}").unwrap();
-        writeln!(out, "}}").unwrap();
         writeln!(out).unwrap();
-        writeln!(out, "pub struct Operands {{").unwrap();
-        writeln!(out, "    pub n: f64,").unwrap();
-        writeln!(out, "    pub i: u64,").unwrap();
-        writeln!(out, "    pub v: u8,").unwrap();
-        writeln!(out, "    pub w: u8,").unwrap();
-        writeln!(out, "    pub f: u64,").unwrap();
-        writeln!(out, "    pub t: u64,").unwrap();
-        writeln!(out, "}}").unwrap();
-        writeln!(out).unwrap();
-        writeln!(out, "impl core::fmt::Display for FluentNum {{").unwrap();
         writeln!(
             out,
-            "    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {{"
+            "{}",
+            formatdoc!(
+                "
+                impl FluentNum {{
+                    pub fn operands(self) -> Operands {{
+                        let i = self.0.trunc() as u64;
+                        Operands {{ n: self.0, i, v: 0, w: 0, f: 0, t: 0 }}
+                    }}
+                }}
+            "
+            )
         )
         .unwrap();
-        writeln!(out, "        write!(f, \"{{}}\", self.0)").unwrap();
-        writeln!(out, "    }}").unwrap();
-        writeln!(out, "}}").unwrap();
         writeln!(out).unwrap();
+        writeln!(
+            out,
+            "{}",
+            formatdoc!(
+                "
+                pub struct Operands {{
+                    pub n: f64,
+                    pub i: u64,
+                    pub v: u8,
+                    pub w: u8,
+                    pub f: u64,
+                    pub t: u64,
+                }}
+            "
+            )
+        )
+        .unwrap();
+        writeln!(out).unwrap();
+        writeln!(
+            out,
+            "{}",
+            formatdoc!(
+                "
+                impl core::fmt::Display for FluentNum {{
+                    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {{
+                        write!(f, \"{{}}\", self.0)
+                    }}
+                }}
+            "
+            )
+        )
+        .unwrap();
     }
 
     fn emit_runtime(&self, locales: &[&String], out: &mut String) {
