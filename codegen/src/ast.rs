@@ -51,6 +51,17 @@ pub enum Element {
         selector: String,
         variants: Vec<Variant>,
     },
+    /// Call to a registered built-in function like `NUMBER($x, ...)`.
+    BuiltInCall {
+        /// Function name in FTL (e.g. "NUMBER").
+        func_name: String,
+        /// The Rust type name (e.g. "Number").
+        ty_name: String,
+        /// The variable name being passed (e.g. "x" from $x).
+        var_name: String,
+        /// Named arguments: FTL camelCase name -> raw value as string.
+        named_args: BTreeMap<String, String>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -70,6 +81,8 @@ pub enum KeyType {
 pub enum ParamType {
     Str,
     Num,
+    /// A registered built-in type (e.g. "Number", "DateTime").
+    Builtin(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

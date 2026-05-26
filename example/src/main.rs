@@ -1,8 +1,8 @@
-use crate::i18n::*;
-
 pub mod i18n {
     include!(concat!(env!("OUT_DIR"), "/i18n_gen.rs"));
 }
+
+use crate::i18n::*;
 
 fn print_locale() {
     println!("  settings = {}", t!(settings()));
@@ -29,6 +29,10 @@ fn print_locale() {
     println!("  greet(other)  = {}", t!(user_greeting("other")));
     println!("  finish(1) = {}", t!(finish_place(1)));
     println!("  finish(5) = {}", t!(finish_place(5)));
+    println!("  test-add-10(7) = {}", t!(test_add_10(Test::new(7))));
+    println!("  test-sub-5(7) = {}", t!(test_sub_5(Test::new(7))));
+    println!("  test-mul-3(7) = {}", t!(test_mul_3(Test::new(7))));
+    println!("  test-div-2(7) = {}", t!(test_div_2(Test::new(7))));
 }
 
 fn main() {

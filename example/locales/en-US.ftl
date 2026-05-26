@@ -118,21 +118,27 @@ finish-place =
        *[other] You finished { $place }th!
     }
 
-## 11. Unsupported Features
+## 11. Custom Built-in Test: TEST($value, operator, operand)
+test-add-10 = { TEST($value, operator: "+", operand: 10) }
+test-sub-5 = { TEST($value, operator: "-", operand: 5) }
+test-mul-3 = { TEST($value, operator: "x", operand: 3) }
+test-div-2 = { TEST($value, operator: "/", operand: 2) }
 
-# 11a. NUMBER() / 11b. DATETIME()
+## 12. Unsupported Features
+
+# 12a. NUMBER() / 12b. DATETIME()
 # dpi-ratio = Your DPI ratio is { NUMBER($ratio, minimumFractionDigits: 2) }
 # today-is = Today is { DATETIME($date) }
 # full-date = { DATETIME($date, month: "long", year: "numeric", day: "numeric") }
 
-# 11c. Function call as selector
+# 12c. Function call as selector
 # your-score =
 #     { NUMBER($score, minimumFractionDigits: 1) ->
 #         [0.0]   You scored zero points.
 #        *[other] You scored { NUMBER($score, minimumFractionDigits: 1) } points.
 #     }
 
-# 11d. Ordinal via NUMBER(…, type: "ordinal")
+# 12d. Ordinal via NUMBER(&hellip;, type: "ordinal")
 # your-rank = { NUMBER($pos, type: "ordinal") ->
 #    [1] You finished first!
 #    [one] You finished { $pos }st
@@ -141,5 +147,5 @@ finish-place =
 #   *[other] You finished { $pos }th
 # }
 
-# 11e. Partially-formatted variables (FluentDateTime / FluentNumber)
+# 12e. Partially-formatted variables (FluentDateTime / FluentNumber)
 # today = Today is { $day }

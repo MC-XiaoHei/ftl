@@ -61,7 +61,7 @@ fn generator_with_select_plural() {
     )
     .unwrap();
 
-    let gen = Generator::load(&dir, "en-US", "");
+    let gen = Generator::load_simple(&dir, "en-US", "");
     let code = gen.generate();
     assert!(code.contains("fn files(count: impl Into<FluentNum>)"));
     assert!(code.contains("1.0 =>"));
@@ -82,7 +82,7 @@ fn generator_panics_when_primary_missing() {
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join("en-US.ftl"), "settings = Settings").unwrap();
 
-    Generator::load(&dir, "xx", "");
+    Generator::load_simple(&dir, "xx", "");
 }
 
 #[test]
@@ -99,7 +99,7 @@ fn generator_panics_on_extra_keys() {
     fs::write(dir.join("en-US.ftl"), "settings = Settings").unwrap();
     fs::write(dir.join("zh-CN.ftl"), "settings = 设置\nextra = Extra").unwrap();
 
-    Generator::load(&dir, "en-US", "");
+    Generator::load_simple(&dir, "en-US", "");
 }
 
 #[test]
@@ -119,7 +119,7 @@ fn generator_fallback_when_message_missing() {
     .unwrap();
     fs::write(dir.join("zh-CN.ftl"), "settings = 设置").unwrap();
 
-    let gen = Generator::load(&dir, "en-US", "");
+    let gen = Generator::load_simple(&dir, "en-US", "");
     let code = gen.generate();
     assert!(code.contains("WARNING"));
     assert!(code.contains("Hello"));
@@ -141,7 +141,7 @@ fn generator_skips_non_ftl_files() {
     fs::write(dir.join("notes.txt"), "not a translation").unwrap();
     fs::write(dir.join("data.json"), "{}").unwrap();
 
-    let gen = Generator::load(&dir, "en-US", "");
+    let gen = Generator::load_simple(&dir, "en-US", "");
     assert_eq!(gen.locales.len(), 1);
 
     let _ = fs::remove_dir_all(&dir);
@@ -162,7 +162,7 @@ fn generator_with_multiple_locales() {
     fs::write(dir.join("ja-JP.ftl"), "title = マイアプリ").unwrap();
     fs::write(dir.join("fr-FR.ftl"), "title = Mon App").unwrap();
 
-    let gen = Generator::load(&dir, "en-US", "");
+    let gen = Generator::load_simple(&dir, "en-US", "");
     assert_eq!(gen.locales.len(), 4);
     let code = gen.generate();
     assert!(code.contains("pub mod en_us"));
@@ -194,7 +194,7 @@ fn generator_with_numeric_variant_key() {
     )
     .unwrap();
 
-    let gen = Generator::load(&dir, "en-US", "");
+    let gen = Generator::load_simple(&dir, "en-US", "");
     let code = gen.generate();
     assert!(code.contains("0.0 =>"));
     assert!(code.contains("1.0 =>"));
@@ -215,7 +215,7 @@ fn emit_runtime_generates_lang_enum_and_switch() {
     fs::write(dir.join("en-US.ftl"), "x = X").unwrap();
     fs::write(dir.join("de-DE.ftl"), "x = Y").unwrap();
 
-    let gen = Generator::load(&dir, "en-US", "");
+    let gen = Generator::load_simple(&dir, "en-US", "");
     let code = gen.generate();
     assert!(code.contains("static LOCALE_ID: AtomicU8"));
     assert!(code.contains("pub fn set_lang"));
@@ -245,7 +245,7 @@ fn message_attributes_generate_flattened_functions() {
     )
     .unwrap();
 
-    let gen = Generator::load(&dir, "en-US", "");
+    let gen = Generator::load_simple(&dir, "en-US", "");
     let code = gen.generate();
     assert!(code.contains("fn save__label() -> &'static str"));
     assert!(code.contains("fn save__tooltip() -> &'static str"));
@@ -273,7 +273,7 @@ fn message_attribute_fallback_uses_primary() {
     .unwrap();
     fs::write(dir.join("zh-CN.ftl"), "save =\n    .label = 保存\n").unwrap();
 
-    let gen = Generator::load(&dir, "en-US", "");
+    let gen = Generator::load_simple(&dir, "en-US", "");
     let code = gen.generate();
     assert!(code.contains("attribute 'save.tooltip' missing"));
     assert!(code.contains("pub fn save__tooltip() -> &'static str { \"Save current file\" }"));
@@ -298,7 +298,7 @@ fn message_attributes_support_refs_and_variable_propagation() {
     )
     .unwrap();
 
-    let gen = Generator::load(&dir, "en-US", "");
+    let gen = Generator::load_simple(&dir, "en-US", "");
     let code = gen.generate();
     assert!(code.contains("pub fn save__label() -> &'static str { \"Save Zed\" }"));
     assert!(code.contains("fn save__tooltip(target: &str) -> String"));
@@ -319,7 +319,7 @@ fn inline_literal_number_works() {
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join("en-US.ftl"), "x = value { 42 }").unwrap();
 
-    let gen = Generator::load(&dir, "en-US", "");
+    let gen = Generator::load_simple(&dir, "en-US", "");
     let code = gen.generate();
     assert!(code.contains("pub fn x() -> &'static str { \"value 42\" }"));
 
@@ -338,7 +338,7 @@ fn inline_literal_string_works() {
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join("en-US.ftl"), "msg = { \"hello\" } world").unwrap();
 
-    let gen = Generator::load(&dir, "en-US", "");
+    let gen = Generator::load_simple(&dir, "en-US", "");
     let code = gen.generate();
     assert!(code.contains("pub fn msg() -> &'static str { \"hello world\" }"));
 
@@ -361,7 +361,7 @@ fn literal_number_selector_resolved_at_compile_time() {
     )
     .unwrap();
 
-    let gen = Generator::load(&dir, "en-US", "");
+    let gen = Generator::load_simple(&dir, "en-US", "");
     let code = gen.generate();
     // 42 matches [42] → should inline "forty-two" as pure text
     assert!(code.contains("fn x() -> &'static str { \"forty-two\" }"));
@@ -386,7 +386,7 @@ fn literal_number_selector_uses_default_when_no_match() {
     )
     .unwrap();
 
-    let gen = Generator::load(&dir, "en-US", "");
+    let gen = Generator::load_simple(&dir, "en-US", "");
     let code = gen.generate();
     assert!(code.contains("\"fallback\""));
 
@@ -409,7 +409,7 @@ fn literal_string_selector_resolved_at_compile_time() {
     )
     .unwrap();
 
-    let gen = Generator::load(&dir, "en-US", "");
+    let gen = Generator::load_simple(&dir, "en-US", "");
     let code = gen.generate();
     assert!(code.contains("\"greeting\""));
 
@@ -432,7 +432,7 @@ fn term_attribute_select_resolved_at_compile_time() {
     )
     .unwrap();
 
-    let gen = Generator::load(&dir, "en-US", "");
+    let gen = Generator::load_simple(&dir, "en-US", "");
     let code = gen.generate();
     assert!(code.contains("fn msg() -> &'static str { \"Ms.\" }"));
 
@@ -456,7 +456,7 @@ fn message_reference_is_expanded_at_build_time() {
     )
     .unwrap();
 
-    let gen = Generator::load(&dir, "en-US", "");
+    let gen = Generator::load_simple(&dir, "en-US", "");
     let code = gen.generate();
     assert!(code.contains("pub fn about() -> &'static str { \"About Zed\" }"));
 
@@ -480,7 +480,7 @@ fn term_reference_is_expanded_at_build_time() {
     )
     .unwrap();
 
-    let gen = Generator::load(&dir, "en-US", "");
+    let gen = Generator::load_simple(&dir, "en-US", "");
     let code = gen.generate();
     assert!(code.contains("pub fn welcome() -> &'static str { \"Welcome to Zed\" }"));
 
@@ -504,7 +504,7 @@ fn parameterized_term_expands_with_arguments() {
     )
     .unwrap();
 
-    let gen = Generator::load(&dir, "en-US", "");
+    let gen = Generator::load_simple(&dir, "en-US", "");
     let code = gen.generate();
     assert!(code.contains("pub fn about() -> &'static str { \"About Cool Zed\" }"));
 
@@ -528,7 +528,7 @@ fn positional_term_argument_resolved_by_order() {
     )
     .unwrap();
 
-    let gen = Generator::load(&dir, "en-US", "");
+    let gen = Generator::load_simple(&dir, "en-US", "");
     let code = gen.generate();
     // $greeting ← "Hi", $name ← "Alice"
     assert!(code.contains("fn msg() -> &'static str { \"Hi, Alice!\" }"));
@@ -553,7 +553,7 @@ fn free_variables_propagate_through_message_references() {
     )
     .unwrap();
 
-    let gen = Generator::load(&dir, "en-US", "");
+    let gen = Generator::load_simple(&dir, "en-US", "");
     let code = gen.generate();
     assert!(code.contains("fn welcome(user: &str) -> String"));
     assert!(code.contains("s.push_str(user);"));
@@ -575,7 +575,7 @@ fn cyclic_message_reference_panics() {
 
     fs::write(dir.join("en-US.ftl"), "a = { b }\nb = { a }\n").unwrap();
 
-    Generator::load(&dir, "en-US", "");
+    Generator::load_simple(&dir, "en-US", "");
 }
 
 #[test]
@@ -596,7 +596,7 @@ fn cyclic_term_reference_panics() {
     )
     .unwrap();
 
-    Generator::load(&dir, "en-US", "");
+    Generator::load_simple(&dir, "en-US", "");
 }
 
 /// Helper: create a temp dir with a given identifier.
@@ -620,7 +620,7 @@ fn write_ftl(dir: &std::path::Path, name: &str, content: &str) {
 fn expect_load_error(dir: &std::path::Path, primary: &str, expected_substr: &str) {
     use crate::parse::Generator;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        Generator::load(dir, primary, "");
+        Generator::load_simple(dir, primary, "");
     }));
     match result {
         Ok(_) => panic!("expected load to panic, but it succeeded"),
@@ -651,7 +651,7 @@ fn diag_file_not_found() {
 fn diag_unreadable_file() {
     let dir = temp_dir("diag_unreadable");
     write_ftl(&dir, "en-US.ftl", "x = 1");
-    let _ = crate::parse::Generator::load(&dir, "en-US", "");
+    let _ = crate::parse::Generator::load_simple(&dir, "en-US", "");
 }
 
 #[test]
@@ -842,7 +842,7 @@ fn diag_parse_error_format_includes_location() {
     write_ftl(&dir, "en-US.ftl", "msg = hello\nbad = { \"\\z\" }\n");
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        Generator::load(&dir, "en-US", "");
+        Generator::load_simple(&dir, "en-US", "");
     }));
     let msg = match result {
         Err(e) => match e.downcast_ref::<String>() {
@@ -869,7 +869,7 @@ fn diag_parse_error_format_shows_snippet() {
     write_ftl(&dir, "en-US.ftl", "a = 1\nb = 2\nc = { \"\\x\" }\n");
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        Generator::load(&dir, "en-US", "");
+        Generator::load_simple(&dir, "en-US", "");
     }));
     let msg = match result {
         Err(e) => match e.downcast_ref::<String>() {
@@ -963,19 +963,19 @@ fn diag_parse_error_expected_literal_inline() {
 }
 
 #[test]
-#[should_panic(expected = "Unsupported expression")]
-fn unsupported_number_function_panics() {
+#[should_panic(expected = "Unrecognized function 'NUMBER'")]
+fn unsupported_number_function_requires_register() {
     let dir = temp_dir("unsup_num");
     write_ftl(&dir, "en-US.ftl", "x = { NUMBER($n) }\n");
-    crate::parse::Generator::load(&dir, "en-US", "");
+    crate::parse::Generator::load_simple(&dir, "en-US", "");
 }
 
 #[test]
-#[should_panic(expected = "Unsupported expression")]
-fn unsupported_datetime_function_panics() {
+#[should_panic(expected = "Unrecognized function 'DATETIME'")]
+fn unsupported_datetime_function_requires_register() {
     let dir = temp_dir("unsup_dt");
     write_ftl(&dir, "en-US.ftl", "x = { DATETIME($d) }\n");
-    crate::parse::Generator::load(&dir, "en-US", "");
+    crate::parse::Generator::load_simple(&dir, "en-US", "");
 }
 
 #[test]
@@ -1000,7 +1000,7 @@ fn param_type_conflict_panics_via_integration() {
 fn undefined_message_reference_panics() {
     let dir = temp_dir("undef_msg");
     write_ftl(&dir, "en-US.ftl", "x = { nonexistent }\n");
-    crate::parse::Generator::load(&dir, "en-US", "");
+    crate::parse::Generator::load_simple(&dir, "en-US", "");
 }
 
 #[test]
@@ -1008,5 +1008,5 @@ fn undefined_message_reference_panics() {
 fn undefined_term_reference_panics() {
     let dir = temp_dir("undef_term");
     write_ftl(&dir, "en-US.ftl", "x = { -nonexistent }\n");
-    crate::parse::Generator::load(&dir, "en-US", "");
+    crate::parse::Generator::load_simple(&dir, "en-US", "");
 }

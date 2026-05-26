@@ -4,15 +4,17 @@ use std::fmt::Write;
 use crate::ast::*;
 use crate::plural::plural_rule_or_fallback;
 use crate::util::{escape_str, sanitize};
+use crate::{BuiltInArgType, BuiltInFuncDef};
 
 pub fn generate_one_function(
     name: &str,
     elements: &[Element],
     params: &BTreeMap<String, ParamType>,
     locale: &str,
+    builtins: &BTreeMap<String, BuiltInFuncDef>,
 ) -> String {
     let mut code = String::new();
-    let decl = gen_fn_decl(name, params, false);
+    let decl = gen_fn_decl(name, params, false, builtins);
 
     if is_pure_text(elements) {
         let text: String = elements
@@ -28,17 +30,27 @@ pub fn generate_one_function(
         writeln!(code, "pub fn {} {{ \"{}\" }}", decl, escape_str(&text)).unwrap();
     } else if has_select(elements) {
         writeln!(code, "pub fn {} {{", decl).unwrap();
-        writeln!(code, "{}", gen_select_body(elements, params, locale)).unwrap();
+        writeln!(
+            code,
+            "{}",
+            gen_select_body(elements, params, locale, builtins)
+        )
+        .unwrap();
         writeln!(code, "}}").unwrap();
     } else {
         writeln!(code, "pub fn {} {{", decl).unwrap();
-        writeln!(code, "{}", gen_push_body(elements, params)).unwrap();
+        writeln!(code, "{}", gen_push_body(elements, params, builtins)).unwrap();
         writeln!(code, "}}").unwrap();
     }
     code
 }
 
-pub fn gen_fn_decl(name: &str, params: &BTreeMap<String, ParamType>, with_self: bool) -> String {
+pub fn gen_fn_decl(
+    name: &str,
+    params: &BTreeMap<String, ParamType>,
+    with_self: bool,
+    _builtins: &BTreeMap<String, BuiltInFuncDef>,
+) -> String {
     let mut out = String::new();
     let safe_name = sanitize(name);
     write!(out, "{}(", safe_name).unwrap();
@@ -60,6 +72,7 @@ pub fn gen_fn_decl(name: &str, params: &BTreeMap<String, ParamType>, with_self: 
             match ptype {
                 ParamType::Str => "&str",
                 ParamType::Num => "impl Into<FluentNum>",
+                ParamType::Builtin(ty) => ty.as_str(),
             }
         )
         .unwrap();
@@ -96,7 +109,15 @@ fn capacity_expr(elements: &[Element], params: &BTreeMap<String, ParamType>) -> 
                 parts.push(match params.get(name).unwrap_or(&ParamType::Str) {
                     ParamType::Num => "32".to_string(),
                     ParamType::Str => format!("{}.len()", safe_name),
+                    ParamType::Builtin(_) => "32".to_string(),
                 });
+            }
+            Element::BuiltInCall { .. } => {
+                if acc > 0 {
+                    parts.push(acc.to_string());
+                    acc = 0;
+                }
+                parts.push("32".to_string());
             }
             Element::Select { .. } => unreachable!(),
             Element::MessageRef(_)
@@ -118,6 +139,7 @@ fn emit_push_statements(
     elements: &[Element],
     params: &BTreeMap<String, ParamType>,
     indent: &str,
+    builtins: &BTreeMap<String, BuiltInFuncDef>,
     code: &mut String,
 ) {
     for e in elements {
@@ -139,7 +161,29 @@ fn emit_push_statements(
                     ParamType::Str => {
                         writeln!(code, "{}s.push_str({});", indent, safe_name).unwrap();
                     }
+                    ParamType::Builtin(_) => {
+                        writeln!(code, "{}{}.write_to(&mut s);", indent, safe_name).unwrap();
+                    }
                 }
+            }
+            Element::BuiltInCall {
+                func_name,
+                var_name,
+                named_args,
+                ..
+            } => {
+                let safe_var = sanitize(var_name);
+                let def = builtins
+                    .get(func_name.as_str())
+                    .unwrap_or_else(|| panic!("Built-in function '{}' not registered", func_name));
+                write!(code, "{}{}", indent, safe_var).unwrap();
+                for arg_def in def.named_args.iter() {
+                    if let Some(raw_value) = named_args.get(&arg_def.ftl_name) {
+                        let rust_value = format_builtin_arg(raw_value, &arg_def.arg_type);
+                        write!(code, ".{}({})", arg_def.rust_name, rust_value).unwrap();
+                    }
+                }
+                writeln!(code, ".write_to(&mut s);").unwrap();
             }
             Element::Select { .. } => unreachable!(),
             Element::MessageRef(_)
@@ -150,12 +194,31 @@ fn emit_push_statements(
     }
 }
 
-fn gen_push_body(elements: &[Element], params: &BTreeMap<String, ParamType>) -> String {
+fn format_builtin_arg(raw: &str, arg_type: &BuiltInArgType) -> String {
+    match arg_type {
+        BuiltInArgType::String => format!("\"{}\".to_string()", raw),
+        BuiltInArgType::Int => format!("{}i64", raw),
+        BuiltInArgType::Float => format!("{}f64", raw),
+        BuiltInArgType::Bool => {
+            if raw.eq_ignore_ascii_case("true") || raw == "1" {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            }
+        }
+    }
+}
+
+fn gen_push_body(
+    elements: &[Element],
+    params: &BTreeMap<String, ParamType>,
+    builtins: &BTreeMap<String, BuiltInFuncDef>,
+) -> String {
     let mut code = String::new();
     writeln!(code, "    let cap = {};", capacity_expr(elements, params)).unwrap();
     emit_num_convert(params, "    ", &mut code);
     writeln!(code, "    let mut s = String::with_capacity(cap);").unwrap();
-    emit_push_statements(elements, params, "    ", &mut code);
+    emit_push_statements(elements, params, "    ", builtins, &mut code);
     writeln!(code, "    s").unwrap();
     code
 }
@@ -164,6 +227,7 @@ fn gen_select_body(
     elements: &[Element],
     params: &BTreeMap<String, ParamType>,
     locale: &str,
+    builtins: &BTreeMap<String, BuiltInFuncDef>,
 ) -> String {
     let s = elements
         .iter()
@@ -181,6 +245,14 @@ fn gen_select_body(
 
     let mut code = String::new();
 
+    // For built-in type selectors, delegate to the built-in
+    if let ParamType::Builtin(_) = selector_type {
+        panic!(
+            "Cannot use '{}' (built-in type) as a select selector",
+            selector
+        );
+    }
+
     if selector_type == &ParamType::Str {
         writeln!(code, "    match {} {{", safe_selector).unwrap();
         for v in variants.iter().filter(|v| !v.default) {
@@ -188,7 +260,7 @@ fn gen_select_body(
                 code,
                 "        {} => {},",
                 variant_arm_pattern(&v.key, selector_type, locale, v.default),
-                variant_arm_body(&v.elements, params)
+                variant_arm_body(&v.elements, params, builtins)
             )
             .unwrap();
         }
@@ -197,7 +269,7 @@ fn gen_select_body(
                 code,
                 "        {} => {},",
                 variant_arm_pattern(&v.key, selector_type, locale, v.default),
-                variant_arm_body(&v.elements, params)
+                variant_arm_body(&v.elements, params, builtins)
             )
             .unwrap();
         }
@@ -215,7 +287,7 @@ fn gen_select_body(
                 code,
                 "        {} => {},",
                 variant_arm_pattern_num(&v.key, locale),
-                variant_arm_body(&v.elements, params)
+                variant_arm_body(&v.elements, params, builtins)
             )
             .unwrap();
         }
@@ -223,7 +295,7 @@ fn gen_select_body(
             writeln!(
                 code,
                 "        _ => {},",
-                variant_arm_body(&v.elements, params)
+                variant_arm_body(&v.elements, params, builtins)
             )
             .unwrap();
         }
@@ -232,7 +304,11 @@ fn gen_select_body(
     code
 }
 
-fn variant_arm_body(elements: &[Element], params: &BTreeMap<String, ParamType>) -> String {
+fn variant_arm_body(
+    elements: &[Element],
+    params: &BTreeMap<String, ParamType>,
+    builtins: &BTreeMap<String, BuiltInFuncDef>,
+) -> String {
     if is_pure_text(elements) {
         let text: String = elements
             .iter()
@@ -255,7 +331,7 @@ fn variant_arm_body(elements: &[Element], params: &BTreeMap<String, ParamType>) 
     )
     .unwrap();
     writeln!(code, "            let mut s = String::with_capacity(cap);").unwrap();
-    emit_push_statements(elements, params, "            ", &mut code);
+    emit_push_statements(elements, params, "            ", builtins, &mut code);
     writeln!(code, "            s").unwrap();
     write!(code, "        }}").unwrap();
     code
@@ -281,6 +357,9 @@ fn variant_arm_pattern(
             })
             .unwrap_or_else(|| "n if false".to_string()),
         (KeyType::Ident(cat), ParamType::Str) => format!("\"{}\"", escape_str(cat)),
+        (_, ParamType::Builtin(_)) => {
+            panic!("Built-in type cannot be used in select variant pattern")
+        }
     }
 }
 
@@ -337,11 +416,16 @@ mod tests {
         assert!(!has_select(&[Element::VarRef("x".into())]));
     }
 
+    fn no_builtins() -> BTreeMap<String, crate::BuiltInFuncDef> {
+        BTreeMap::new()
+    }
+
     #[test]
     fn fn_decl_no_params() {
         let params = BTreeMap::new();
+        let b = no_builtins();
         assert_eq!(
-            gen_fn_decl("settings", &params, false),
+            gen_fn_decl("settings", &params, false, &b),
             "settings() -> &'static str"
         );
     }
@@ -350,8 +434,9 @@ mod tests {
     fn fn_decl_with_self() {
         let mut params = BTreeMap::new();
         params.insert("name".into(), ParamType::Str);
+        let b = no_builtins();
         assert_eq!(
-            gen_fn_decl("hello", &params, true),
+            gen_fn_decl("hello", &params, true, &b),
             "hello(&self, name: &str) -> String"
         );
     }
@@ -360,8 +445,9 @@ mod tests {
     fn fn_decl_num_param() {
         let mut params = BTreeMap::new();
         params.insert("count".into(), ParamType::Num);
+        let b = no_builtins();
         assert_eq!(
-            gen_fn_decl("files", &params, false),
+            gen_fn_decl("files", &params, false, &b),
             "files(count: impl Into<FluentNum>) -> String"
         );
     }
@@ -439,7 +525,7 @@ mod tests {
     fn generate_function_cases() {
         let params = BTreeMap::new();
         let elems = [Element::Text("Settings".into())];
-        let code = generate_one_function("settings", &elems, &params, "en");
+        let code = generate_one_function("settings", &elems, &params, "en", &no_builtins());
         assert_eq!(
             code.trim(),
             "pub fn settings() -> &'static str { \"Settings\" }"
@@ -447,7 +533,7 @@ mod tests {
 
         let params = BTreeMap::new();
         let elems = [Element::Text("he\"llo\nworld".into())];
-        let code = generate_one_function("test", &elems, &params, "en");
+        let code = generate_one_function("test", &elems, &params, "en", &no_builtins());
         assert!(code.contains("he\\\"llo\\nworld"));
 
         let mut params = BTreeMap::new();
@@ -457,7 +543,7 @@ mod tests {
             Element::VarRef("name".into()),
             Element::Text("!".into()),
         ];
-        let code = generate_one_function("hello", &elems, &params, "en");
+        let code = generate_one_function("hello", &elems, &params, "en", &no_builtins());
         assert!(code.starts_with("pub fn hello(name: &str) -> String {"));
         assert!(code.contains("let cap = 7 + name.len() + 1;"));
         assert!(code.contains("s.push_str(name);"));
@@ -468,7 +554,8 @@ mod tests {
             Element::Text("count: ".into()),
             Element::VarRef("count".into()),
         ];
-        let code = generate_one_function("show_count", &elems, &params, "en");
+        let code = generate_one_function("show_count", &elems, &params, "en", &no_builtins());
+        assert!(code.contains("show_count"));
         assert!(code.contains("count: impl Into<FluentNum>"));
         assert!(code.contains("write!(&mut s, \"{}\", count).unwrap();"));
 
@@ -492,7 +579,7 @@ mod tests {
                 },
             ],
         }];
-        let code = generate_one_function("files", &elems, &params, "en");
+        let code = generate_one_function("files", &elems, &params, "en", &no_builtins());
         assert!(code.starts_with("pub fn files(count: impl Into<FluentNum>) -> String {"));
         assert!(code.contains("count: FluentNum = count.into()"));
         assert!(code.contains("1.0 =>"));
@@ -517,7 +604,7 @@ mod tests {
                 },
             ],
         }];
-        let code = generate_one_function("greet", &elems, &params, "en");
+        let code = generate_one_function("greet", &elems, &params, "en", &no_builtins());
         assert!(code.contains("match gender"));
         assert!(code.contains("\"male\" => \"sir\".to_string()"));
         assert!(code.contains("_ => \"other\".to_string()"));

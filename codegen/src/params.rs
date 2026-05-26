@@ -3,11 +3,12 @@ use std::collections::BTreeMap;
 
 const NUMERIC_PLURAL_CATEGORIES: &[&str] = &["zero", "one", "two", "few", "many"];
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum ParamUsage {
     Interpolation,
     SelectorStr,
     SelectorNum,
+    Builtin(String),
 }
 
 pub fn collect_params_with_context(
@@ -46,11 +47,23 @@ fn collect_params_into(
                 let selector_usage = match infer_selector_type(variants) {
                     ParamType::Str => ParamUsage::SelectorStr,
                     ParamType::Num => ParamUsage::SelectorNum,
+                    ParamType::Builtin(_) => unreachable!(),
                 };
                 register_usage(selector, selector_usage, map, usage, context);
                 for v in variants {
                     collect_params_into(&v.elements, map, usage, context);
                 }
+            }
+            Element::BuiltInCall {
+                var_name, ty_name, ..
+            } => {
+                register_usage(
+                    var_name,
+                    ParamUsage::Builtin(ty_name.clone()),
+                    map,
+                    usage,
+                    context,
+                );
             }
         }
     }
@@ -63,15 +76,15 @@ fn register_usage(
     usage: &mut BTreeMap<String, ParamUsage>,
     context: &str,
 ) {
-    match usage.get(name).copied() {
+    match usage.get(name) {
         None => {
-            usage.insert(name.to_string(), new_usage);
-            map.insert(name.to_string(), usage_to_type(new_usage));
+            usage.insert(name.to_string(), new_usage.clone());
+            map.insert(name.to_string(), usage_to_type(&new_usage));
         }
         Some(existing) => {
-            let merged = merge_usage(existing, new_usage, name, context);
-            usage.insert(name.to_string(), merged);
-            map.insert(name.to_string(), usage_to_type(merged));
+            let merged = merge_usage(existing.clone(), new_usage, name, context);
+            usage.insert(name.to_string(), merged.clone());
+            map.insert(name.to_string(), usage_to_type(&merged));
         }
     }
 }
@@ -83,7 +96,7 @@ fn merge_usage(
     context: &str,
 ) -> ParamUsage {
     use ParamUsage::*;
-    match (existing, new_usage) {
+    match (&existing, &new_usage) {
         (Interpolation, Interpolation) => Interpolation,
         (Interpolation, SelectorStr)
         | (SelectorStr, Interpolation)
@@ -96,17 +109,34 @@ fn merge_usage(
                 "Parameter '{}' has conflicting inferred types in {}: {:?} vs {:?}",
                 name,
                 context,
-                usage_to_type(existing),
-                usage_to_type(new_usage)
+                usage_to_type(&existing),
+                usage_to_type(&new_usage)
+            );
+        }
+        (Builtin(a), Builtin(b)) if a == b => Builtin(a.clone()),
+        (Builtin(a), Builtin(b)) => {
+            panic!(
+                "Parameter '{}' has conflicting built-in types '{}' and '{}' in {}",
+                name, a, b, context
+            );
+        }
+        (Builtin(_), _other) | (_other, Builtin(_)) => {
+            panic!(
+                "Parameter '{}' has conflicting inferred types in {}: {:?} vs {:?}",
+                name,
+                context,
+                usage_to_type(&existing),
+                usage_to_type(&new_usage)
             );
         }
     }
 }
 
-fn usage_to_type(usage: ParamUsage) -> ParamType {
+fn usage_to_type(usage: &ParamUsage) -> ParamType {
     match usage {
         ParamUsage::Interpolation | ParamUsage::SelectorStr => ParamType::Str,
         ParamUsage::SelectorNum => ParamType::Num,
+        ParamUsage::Builtin(ty) => ParamType::Builtin(ty.clone()),
     }
 }
 
@@ -120,6 +150,7 @@ fn infer_selector_type(variants: &[Variant]) -> ParamType {
     }) {
         return ParamType::Num;
     }
+    // All variants have Ident keys but not numeric categories → string selector
     ParamType::Str
 }
 

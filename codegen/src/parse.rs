@@ -13,12 +13,14 @@ use crate::diag::{report_diagnostics, Diag, DiagKind};
 use crate::fmt::generate_one_function;
 use crate::params::collect_params_with_context;
 use crate::util::{sanitize, sanitize_upper};
+use crate::BuiltInFuncDef;
 
 pub struct Generator {
     pub primary: String,
     pub locales: BTreeMap<String, LocaleEntries>,
     pub diags: Vec<Diag>,
     pub module_path: String,
+    pub builtins: BTreeMap<String, BuiltInFuncDef>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -42,7 +44,18 @@ struct Resolver<'a> {
 }
 
 impl Generator {
-    pub fn load(dir: &Path, primary: &str, module_path: &str) -> Self {
+    /// Load locale files without any registered built-in functions.
+    pub fn load_simple(dir: &Path, primary: &str, module_path: &str) -> Self {
+        let empty = BTreeMap::new();
+        Self::load(dir, primary, module_path, &empty)
+    }
+
+    pub fn load(
+        dir: &Path,
+        primary: &str,
+        module_path: &str,
+        builtins: &BTreeMap<String, BuiltInFuncDef>,
+    ) -> Self {
         let mut diags = Vec::new();
         let mut file_map = BTreeMap::new();
         let mut locales = BTreeMap::new();
@@ -90,14 +103,14 @@ impl Generator {
             let file_display = path.to_string_lossy();
             match parser::parse(source.as_str()) {
                 Ok(r) => {
-                    locales.insert(locale, Self::extract(&r));
+                    locales.insert(locale, Self::extract(&r, builtins));
                 }
                 Err((partial, errors)) => {
                     for err in &errors {
                         diags.push(format_parse_error(&source, &file_display, &locale, err));
                     }
                     // use partial result even on parse errors
-                    locales.insert(locale, Self::extract(&partial));
+                    locales.insert(locale, Self::extract(&partial, builtins));
                 }
             }
         }
@@ -208,10 +221,14 @@ impl Generator {
             locales: resolved_locales,
             diags,
             module_path: module_path.to_string(),
+            builtins: builtins.clone(),
         }
     }
 
-    fn extract(resource: &ast::Resource<&str>) -> LocaleEntries {
+    fn extract(
+        resource: &ast::Resource<&str>,
+        builtins: &BTreeMap<String, BuiltInFuncDef>,
+    ) -> LocaleEntries {
         let mut messages = BTreeMap::new();
         let mut terms = BTreeMap::new();
         let mut attributes = BTreeMap::new();
@@ -224,7 +241,7 @@ impl Generator {
                             owner.clone(),
                             Message {
                                 name: owner.clone(),
-                                elements: convert_elements(&pattern.elements),
+                                elements: convert_elements(&pattern.elements, builtins),
                             },
                         );
                     }
@@ -235,7 +252,7 @@ impl Generator {
                             Attribute {
                                 owner: owner.clone(),
                                 name: attr_name,
-                                elements: convert_elements(&attr.value.elements),
+                                elements: convert_elements(&attr.value.elements, builtins),
                             },
                         );
                     }
@@ -246,7 +263,7 @@ impl Generator {
                         owner.clone(),
                         Term {
                             name: owner.clone(),
-                            elements: convert_elements(&term.value.elements),
+                            elements: convert_elements(&term.value.elements, builtins),
                         },
                     );
                     for attr in &term.attributes {
@@ -256,7 +273,7 @@ impl Generator {
                             Attribute {
                                 owner: owner.clone(),
                                 name: attr_name,
-                                elements: convert_elements(&attr.value.elements),
+                                elements: convert_elements(&attr.value.elements, builtins),
                             },
                         );
                     }
@@ -284,6 +301,7 @@ impl Generator {
         writeln!(out, "#[allow(non_upper_case_globals, unused)]").unwrap();
         writeln!(out).unwrap();
         self.emit_fluent_num(&mut out);
+        self.emit_builtin_types(&mut out);
         for locale in &locales {
             self.emit_module(locale, &mut out);
         }
@@ -333,8 +351,14 @@ impl Generator {
         let mod_name = sanitize(locale);
         writeln!(out, "pub mod {} {{", mod_name).unwrap();
         writeln!(out, "    #![allow(non_snake_case)]").unwrap();
+        writeln!(out, "    #![allow(unused_imports)]").unwrap();
         writeln!(out, "    use std::fmt::Write;").unwrap();
         writeln!(out, "    use super::FluentNum;").unwrap();
+        for def in self.builtins.values() {
+            if def.write_to_body.is_some() {
+                writeln!(out, "    use super::{};", def.ty_name).unwrap();
+            }
+        }
         let le = &self.locales[locale];
         let pe = &self.locales[&self.primary];
         let lmsg: BTreeSet<&str> = le.messages.keys().map(|k| k.as_str()).collect();
@@ -347,15 +371,28 @@ impl Generator {
                 writeln!(
                     out,
                     "{}",
-                    generate_one_function(&msg.name, &msg.elements, &params, locale).trim_end()
+                    generate_one_function(
+                        &msg.name,
+                        &msg.elements,
+                        &params,
+                        locale,
+                        &self.builtins,
+                    )
+                    .trim_end()
                 )
                 .unwrap();
             } else {
                 writeln!(
                     out,
                     "{}",
-                    generate_one_function(&p_msg.name, &p_msg.elements, &params, &self.primary)
-                        .trim_end()
+                    generate_one_function(
+                        &p_msg.name,
+                        &p_msg.elements,
+                        &params,
+                        &self.primary,
+                        &self.builtins,
+                    )
+                    .trim_end()
                 )
                 .unwrap();
                 writeln!(
@@ -380,15 +417,28 @@ impl Generator {
                 writeln!(
                     out,
                     "{}",
-                    generate_one_function(&fn_name, &attr.elements, &params, locale).trim_end()
+                    generate_one_function(
+                        &fn_name,
+                        &attr.elements,
+                        &params,
+                        locale,
+                        &self.builtins,
+                    )
+                    .trim_end()
                 )
                 .unwrap();
             } else {
                 writeln!(
                     out,
                     "{}",
-                    generate_one_function(&fn_name, &p_attr.elements, &params, &self.primary)
-                        .trim_end()
+                    generate_one_function(
+                        &fn_name,
+                        &p_attr.elements,
+                        &params,
+                        &self.primary,
+                        &self.builtins,
+                    )
+                    .trim_end()
                 )
                 .unwrap();
                 writeln!(
@@ -505,6 +555,63 @@ impl Generator {
             )
         )
         .unwrap();
+    }
+
+    fn emit_builtin_types(&self, out: &mut String) {
+        use std::fmt::Write;
+        for def in self.builtins.values() {
+            let Some(body) = &def.write_to_body else {
+                continue;
+            };
+            writeln!(out).unwrap();
+            writeln!(out, "pub struct {} {{", def.ty_name).unwrap();
+            writeln!(out, "    pub value: FluentNum,").unwrap();
+            for arg in &def.named_args {
+                let arg_ty = match arg.arg_type {
+                    crate::BuiltInArgType::String => "String",
+                    crate::BuiltInArgType::Int => "i64",
+                    crate::BuiltInArgType::Float => "f64",
+                    crate::BuiltInArgType::Bool => "bool",
+                };
+                writeln!(out, "    pub {}: Option<{}>,", arg.rust_name, arg_ty).unwrap();
+            }
+            writeln!(out, "}}").unwrap();
+            writeln!(out).unwrap();
+            writeln!(out, "impl {} {{", def.ty_name).unwrap();
+            writeln!(out, "    pub fn new(v: impl Into<FluentNum>) -> Self {{").unwrap();
+            writeln!(out, "        Self {{").unwrap();
+            writeln!(out, "            value: v.into(),").unwrap();
+            for arg in &def.named_args {
+                writeln!(out, "            {}: None,", arg.rust_name).unwrap();
+            }
+            writeln!(out, "        }}").unwrap();
+            writeln!(out, "    }}").unwrap();
+            writeln!(out).unwrap();
+            for arg in &def.named_args {
+                let arg_ty = match arg.arg_type {
+                    crate::BuiltInArgType::String => "String",
+                    crate::BuiltInArgType::Int => "i64",
+                    crate::BuiltInArgType::Float => "f64",
+                    crate::BuiltInArgType::Bool => "bool",
+                };
+                writeln!(
+                    out,
+                    "    pub fn {}(mut self, v: {}) -> Self {{",
+                    arg.rust_name, arg_ty
+                )
+                .unwrap();
+                writeln!(out, "        self.{} = Some(v);", arg.rust_name).unwrap();
+                writeln!(out, "        self").unwrap();
+                writeln!(out, "    }}").unwrap();
+                writeln!(out).unwrap();
+            }
+            writeln!(out, "    pub fn write_to(self, out: &mut String) {{").unwrap();
+            writeln!(out, "        let this = &self;").unwrap();
+            writeln!(out, "        use std::fmt::Write;").unwrap();
+            writeln!(out, "        {}", body).unwrap();
+            writeln!(out, "    }}").unwrap();
+            writeln!(out, "}}").unwrap();
+        }
     }
 
     fn emit_runtime(&self, locales: &[&String], out: &mut String) {
@@ -799,6 +906,9 @@ impl<'a> Resolver<'a> {
                         variants: vs,
                     });
                 }
+                Element::BuiltInCall { .. } => {
+                    out.push(element.clone());
+                }
                 Element::TermAttrSelect {
                     term,
                     attr,
@@ -884,6 +994,9 @@ impl<'a> Resolver<'a> {
             Element::Select { .. } | Element::TermAttrSelect { .. } => {
                 panic!("Term argument cannot be a select expression")
             }
+            Element::BuiltInCall { .. } => {
+                panic!("Built-in call cannot be used as a term argument")
+            }
         }
     }
     fn lookup_bound_var(&self, name: &str) -> Option<Element> {
@@ -941,13 +1054,19 @@ fn flatten_attr_name(owner: &str, name: &str) -> String {
     format!("{}__{}", owner, name)
 }
 
-fn convert_elements(elems: &[PatternElement<&str>]) -> Vec<Element> {
-    elems.iter().map(convert_element).collect()
+fn convert_elements(
+    elems: &[PatternElement<&str>],
+    builtins: &BTreeMap<String, BuiltInFuncDef>,
+) -> Vec<Element> {
+    elems.iter().map(|e| convert_element(e, builtins)).collect()
 }
-fn convert_element(e: &PatternElement<&str>) -> Element {
+fn convert_element(
+    e: &PatternElement<&str>,
+    builtins: &BTreeMap<String, BuiltInFuncDef>,
+) -> Element {
     match e {
         PatternElement::TextElement { value } => Element::Text(value.to_string()),
-        PatternElement::Placeable { expression } => convert_expression(expression),
+        PatternElement::Placeable { expression } => convert_expression(expression, builtins),
     }
 }
 
@@ -971,7 +1090,10 @@ fn convert_collected(elems: Vec<Element>) -> Element {
     }
 }
 
-fn convert_expression(expr: &Expression<&str>) -> Element {
+fn convert_expression(
+    expr: &Expression<&str>,
+    builtins: &BTreeMap<String, BuiltInFuncDef>,
+) -> Element {
     match expr {
         Expression::Inline(inline) => match inline {
             InlineExpression::VariableReference { id } => Element::VarRef(id.name.to_string()),
@@ -1012,6 +1134,40 @@ fn convert_expression(expr: &Expression<&str>) -> Element {
             }
             InlineExpression::StringLiteral { value } => Element::Text(value.to_string()),
             InlineExpression::NumberLiteral { value } => Element::Text(value.to_string()),
+            InlineExpression::FunctionReference { id, arguments } => {
+                let func_name = id.name.to_string();
+                let def = builtins.get(&func_name).unwrap_or_else(|| {
+                    panic!(
+                        "Unrecognized function '{}'. Register it with .register() before calling .generate()",
+                        func_name
+                    )
+                });
+                let base: String = match arguments.positional.first() {
+                    Some(InlineExpression::VariableReference { id }) => id.name.to_string(),
+                    _ => panic!(
+                        "{}() expects a variable reference as the first argument",
+                        func_name
+                    ),
+                };
+                let mut named_args = BTreeMap::new();
+                for arg in &arguments.named {
+                    let value: String = match &arg.value {
+                        InlineExpression::StringLiteral { value } => (*value).to_string(),
+                        InlineExpression::NumberLiteral { value } => (*value).to_string(),
+                        _ => panic!(
+                            "Named argument '{}' to {}() must be a string or number literal",
+                            arg.name.name, func_name
+                        ),
+                    };
+                    named_args.insert(arg.name.name.to_string(), value);
+                }
+                Element::BuiltInCall {
+                    func_name,
+                    ty_name: def.ty_name.to_string(),
+                    var_name: base,
+                    named_args,
+                }
+            }
             other => panic!("Unsupported expression: {:?}", other),
         },
         Expression::Select { selector, variants } => {
@@ -1036,7 +1192,7 @@ fn convert_expression(expr: &Expression<&str>) -> Element {
                             };
                             Variant {
                                 key,
-                                elements: convert_elements(&v.value.elements),
+                                elements: convert_elements(&v.value.elements, builtins),
                                 default: v.default,
                             }
                         })
@@ -1062,7 +1218,7 @@ fn convert_expression(expr: &Expression<&str>) -> Element {
                     };
                     Variant {
                         key,
-                        elements: convert_elements(&v.value.elements),
+                        elements: convert_elements(&v.value.elements, builtins),
                         default: v.default,
                     }
                 })
