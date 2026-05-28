@@ -124,21 +124,25 @@ test-sub-5 = { TEST($value, operator: "-", operand: 5) }
 test-mul-3 = { TEST($value, operator: "x", operand: 3) }
 test-div-2 = { TEST($value, operator: "/", operand: 2) }
 
-## 12. 未サポートの機能
+## 12. 組み込み関数
 
-# 12a. NUMBER() / 12b. DATETIME()
-# dpi-ratio = DPI 比率は { NUMBER($ratio, minimumFractionDigits: 2) } です
-# today-is = 今日は { DATETIME($date) } です
-# full-date = { DATETIME($date, month: "long", year: "numeric", day: "numeric") }
+### 12a. NUMBER()
+dpi-ratio = DPI 比率は { NUMBER($ratio, minimumFractionDigits: 2) } です
 
-# 12c. 関数呼び出しをセレクターに使用
+### 12b. DATETIME()
+today-is = { DATETIME($date, year: 2024, month: 5, day: 17) }
+full-date = { DATETIME($date, monthFormat: "long", yearFormat: "numeric", dayFormat: "numeric", year: 2024, month: 5, day: 17) }
+
+## 13. 未サポートの機能
+
+# 13a. 関数呼び出しをセレクターに使用
 # your-score =
 #     { NUMBER($score, minimumFractionDigits: 1) ->
 #         [0.0]   0点でした。
 #        *[other] { NUMBER($score, minimumFractionDigits: 1) } 点でした。
 #     }
 
-# 12d. NUMBER(&hellip;, type: "ordinal") による序数
+# 13b. NUMBER(&hellip;, type: "ordinal") による序数
 # your-rank = { NUMBER($pos, type: "ordinal") ->
 #    [1] 1位！
 #    [one] { $pos }位
@@ -147,5 +151,5 @@ test-div-2 = { TEST($value, operator: "/", operand: 2) }
 #   *[other] { $pos }位
 # }
 
-# 12e. 部分フォーマット変数（FluentDateTime / FluentNumber）
+# 13c. 部分フォーマット変数（FluentDateTime / FluentNumber）
 # today = 今日は { $day } です

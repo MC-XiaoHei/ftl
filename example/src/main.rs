@@ -33,6 +33,26 @@ fn print_locale() {
     println!("  test-sub-5(7) = {}", t!(test_sub_5(Test::new(7))));
     println!("  test-mul-3(7) = {}", t!(test_mul_3(Test::new(7))));
     println!("  test-div-2(7) = {}", t!(test_div_2(Test::new(7))));
+    println!(
+        "  dpi-ratio = {}",
+        t!(dpi_ratio(Number::new(96.0).minimum_fraction_digits(2)))
+    );
+    println!(
+        "  today-is = {}",
+        t!(today_is(DateTime::new(0).year(2024).month(5).day(17)))
+    );
+    println!(
+        "  full-date = {}",
+        t!(full_date(
+            DateTime::new(0)
+                .year(2024)
+                .month(5)
+                .day(17)
+                .month_format("long".to_string())
+                .year_format("numeric".to_string())
+                .day_format("numeric".to_string())
+        ))
+    );
 }
 
 fn main() {

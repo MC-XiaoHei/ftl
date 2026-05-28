@@ -1,7 +1,11 @@
 use criterion::{criterion_group, criterion_main, Criterion};
+use i18n::*;
 use std::hint::black_box;
 
-include!(concat!(env!("OUT_DIR"), "/i18n_gen.rs"));
+#[allow(dead_code)]
+mod i18n {
+    include!(concat!(env!("OUT_DIR"), "/i18n_gen.rs"));
+}
 
 fn bench_all(c: &mut Criterion) {
     set_lang(Lang::EnUs);
@@ -48,6 +52,14 @@ fn bench_all(c: &mut Criterion) {
 
     c.bench_function("ordinal-like numeric selector", |b| {
         b.iter(|| black_box(t!(finish_place(3))))
+    });
+
+    c.bench_function("builtin func NUMBER (locale-aware)", |b| {
+        b.iter(|| black_box(t!(dpi_ratio(Number::new(96.0).minimum_fraction_digits(2)))))
+    });
+
+    c.bench_function("builtin func DATETIME (locale-aware)", |b| {
+        b.iter(|| black_box(t!(today_is(DateTime::new(0).year(2024).month(5).day(17)))))
     });
 
     c.bench_function("get_locale dispatch", |b| {

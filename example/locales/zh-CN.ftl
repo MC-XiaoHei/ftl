@@ -124,21 +124,25 @@ test-sub-5 = { TEST($value, operator: "-", operand: 5) }
 test-mul-3 = { TEST($value, operator: "x", operand: 3) }
 test-div-2 = { TEST($value, operator: "/", operand: 2) }
 
-## 12. 不支持的功能
+## 12. 内置函数
 
-# 12a. NUMBER() / 12b. DATETIME()
-# dpi-ratio = 您的 DPI 比率是 { NUMBER($ratio, minimumFractionDigits: 2) }
-# today-is = 今天是 { DATETIME($date) }
-# full-date = { DATETIME($date, month: "long", year: "numeric", day: "numeric") }
+### 12a. NUMBER()
+dpi-ratio = 您的 DPI 比率是 { NUMBER($ratio, minimumFractionDigits: 2) }
 
-# 12c. 函数调用作选择器
+### 12b. DATETIME()
+today-is = { DATETIME($date, year: 2024, month: 5, day: 17) }
+full-date = { DATETIME($date, monthFormat: "long", yearFormat: "numeric", dayFormat: "numeric", year: 2024, month: 5, day: 17) }
+
+## 13. 不支持的功能
+
+# 13a. 函数调用作选择器
 # your-score =
 #     { NUMBER($score, minimumFractionDigits: 1) ->
 #         [0.0]   您得了零分。
 #        *[other] 您得了 { NUMBER($score, minimumFractionDigits: 1) } 分。
 #     }
 
-# 12d. 通过 NUMBER(…, type: "ordinal") 的序数
+# 13b. 通过 NUMBER(&hellip;, type: "ordinal") 的序数
 # your-rank = { NUMBER($pos, type: "ordinal") ->
 #    [1] 第一名！
 #    [one] 第 { $pos } 名
@@ -147,5 +151,5 @@ test-div-2 = { TEST($value, operator: "/", operand: 2) }
 #   *[other] 第 { $pos } 名
 # }
 
-# 12e. 部分格式化变量（FluentDateTime / FluentNumber）
+# 13c. 部分格式化变量（FluentDateTime / FluentNumber）
 # today = 今天是 { $day }

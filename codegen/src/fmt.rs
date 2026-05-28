@@ -27,8 +27,10 @@ pub fn generate_one_function(
                 }
             })
             .collect();
+        writeln!(code, "#[inline]").unwrap();
         writeln!(code, "pub fn {} {{ \"{}\" }}", decl, escape_str(&text)).unwrap();
     } else if has_select(elements) {
+        writeln!(code, "#[inline]").unwrap();
         writeln!(code, "pub fn {} {{", decl).unwrap();
         writeln!(
             code,
@@ -38,6 +40,7 @@ pub fn generate_one_function(
         .unwrap();
         writeln!(code, "}}").unwrap();
     } else {
+        writeln!(code, "#[inline]").unwrap();
         writeln!(code, "pub fn {} {{", decl).unwrap();
         writeln!(code, "{}", gen_push_body(elements, params, builtins)).unwrap();
         writeln!(code, "}}").unwrap();
@@ -151,12 +154,24 @@ fn emit_push_statements(
                 let safe_name = sanitize(name);
                 match params.get(name).unwrap_or(&ParamType::Str) {
                     ParamType::Num => {
-                        writeln!(
-                            code,
-                            "{}write!(&mut s, \"{{}}\", {}).unwrap();",
-                            indent, safe_name
-                        )
-                        .unwrap();
+                        #[cfg(feature = "builtin")]
+                        {
+                            writeln!(
+                                code,
+                                "{}ftl_builtin::format_number(*{}, None, None, None, None, None, None, None, None, None, &mut s, &super::get_locale().into());",
+                                indent, safe_name
+                            )
+                            .unwrap();
+                        }
+                        #[cfg(not(feature = "builtin"))]
+                        {
+                            writeln!(
+                                code,
+                                "{}write!(&mut s, \"{{}}\", {}).unwrap();",
+                                indent, safe_name
+                            )
+                            .unwrap();
+                        }
                     }
                     ParamType::Str => {
                         writeln!(code, "{}s.push_str({});", indent, safe_name).unwrap();
@@ -528,7 +543,7 @@ mod tests {
         let code = generate_one_function("settings", &elems, &params, "en", &no_builtins());
         assert_eq!(
             code.trim(),
-            "pub fn settings() -> &'static str { \"Settings\" }"
+            "#[inline]\npub fn settings() -> &'static str { \"Settings\" }"
         );
 
         let params = BTreeMap::new();
@@ -544,7 +559,7 @@ mod tests {
             Element::Text("!".into()),
         ];
         let code = generate_one_function("hello", &elems, &params, "en", &no_builtins());
-        assert!(code.starts_with("pub fn hello(name: &str) -> String {"));
+        assert!(code.contains("pub fn hello(name: &str) -> String {"));
         assert!(code.contains("let cap = 7 + name.len() + 1;"));
         assert!(code.contains("s.push_str(name);"));
 
@@ -557,6 +572,9 @@ mod tests {
         let code = generate_one_function("show_count", &elems, &params, "en", &no_builtins());
         assert!(code.contains("show_count"));
         assert!(code.contains("count: impl Into<FluentNum>"));
+        #[cfg(feature = "builtin")]
+        assert!(code.contains("ftl_builtin::format_number(*count,"));
+        #[cfg(not(feature = "builtin"))]
         assert!(code.contains("write!(&mut s, \"{}\", count).unwrap();"));
 
         let mut params = BTreeMap::new();
@@ -580,7 +598,7 @@ mod tests {
             ],
         }];
         let code = generate_one_function("files", &elems, &params, "en", &no_builtins());
-        assert!(code.starts_with("pub fn files(count: impl Into<FluentNum>) -> String {"));
+        assert!(code.contains("pub fn files(count: impl Into<FluentNum>) -> String {"));
         assert!(code.contains("count: FluentNum = count.into()"));
         assert!(code.contains("1.0 =>"));
     }
