@@ -16,7 +16,8 @@ fn test_builtin_func() -> BuiltInFuncDef {
             operand: f64,
         }
 
-        impl |this, out| {
+        impl |this, out, _lang| {
+            use std::fmt::Write;
             let v = *this.value;
             let op = this.operator.as_deref().unwrap_or("+");
             let operand = this.operand.unwrap_or(0.0);

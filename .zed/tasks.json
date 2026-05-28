@@ -17,12 +17,12 @@
   },
   {
     "label": "coverage",
-    "command": "cargo +nightly llvm-cov --package ftl-codegen --summary-only",
+    "command": "cargo +nightly llvm-cov --summary-only --exclude-from-report example",
     "env": { "CARGO_TERM_COLOR": "always" },
   },
   {
     "label": "coverage with html report",
-    "command": "cargo +nightly llvm-cov --html --package ftl-codegen",
+    "command": "cargo +nightly llvm-cov --html --exclude-from-report example",
     "env": { "CARGO_TERM_COLOR": "always" },
   },
   {

@@ -7,6 +7,9 @@ mod params;
 mod plural;
 mod util;
 
+#[cfg(feature = "builtin")]
+pub mod builtin;
+
 use std::collections::BTreeMap;
 use std::fs;
 
@@ -42,15 +45,15 @@ pub struct BuiltInFuncDef {
 
 /// Produce a [`BuiltInFuncDef`] for registration.
 ///
-/// With `impl |this, out| { ... }`, codegen emits the type definition.
-/// Only `build.rs` is needed — no duplicate in `src/`.
+/// With `impl |this, out|` or `impl |this, out, lang|`, codegen emits
+/// the type definition. Use 3-param form to access `lang` (the `Lang` enum)
+/// for locale-aware formatting.
 #[macro_export]
 macro_rules! ftl_builtin {
     (
         $name:ident ( $base:ty ) {
             $( $arg:ident : $ty:tt ),* $(,)?
         }
-        $( impl |$this:ident, $out:ident| $body:block )?
     ) => {
         $crate::BuiltInFuncDef {
             name: stringify!($name).to_uppercase(),
@@ -58,18 +61,23 @@ macro_rules! ftl_builtin {
             named_args: vec![
                 $( $crate::__builtin_named_arg!($arg, $ty) ),*
             ],
-            write_to_body: $crate::__opt_stringify!($($body)?),
+            write_to_body: None,
         }
     };
-}
-
-#[macro_export]
-macro_rules! __opt_stringify {
-    () => {
-        None
-    };
-    ($body:block) => {
-        Some(stringify!($body).to_string())
+    (
+        $name:ident ( $base:ty ) {
+            $( $arg:ident : $ty:tt ),* $(,)?
+        }
+        impl |$this:ident, $out:ident $(, $lang:ident)?| $body:block
+    ) => {
+        $crate::BuiltInFuncDef {
+            name: stringify!($name).to_uppercase(),
+            ty_name: stringify!($name).to_string(),
+            named_args: vec![
+                $( $crate::__builtin_named_arg!($arg, $ty) ),*
+            ],
+            write_to_body: Some(stringify!($body).to_string()),
+        }
     };
 }
 
@@ -177,14 +185,30 @@ impl Config {
         self
     }
 
+    #[allow(unused_mut)]
+    fn get_builtins(&self) -> BTreeMap<String, BuiltInFuncDef> {
+        let mut builtins = self.builtins.clone();
+        #[cfg(feature = "builtin")]
+        {
+            builtins
+                .entry("NUMBER".to_string())
+                .or_insert_with(builtin::number);
+            builtins
+                .entry("DATETIME".to_string())
+                .or_insert_with(builtin::datetime);
+        }
+        builtins
+    }
+
     /// Generate the i18n Rust module.
     pub fn generate(&self) {
+        let builtins = self.get_builtins();
         let output_path = self.get_output_path();
         let gen = parse::Generator::load(
             &self.locales_dir,
             &self.primary,
             &self.module_path,
-            &self.builtins,
+            &builtins,
         );
         let code = gen.generate();
         fs::write(&output_path, code)
@@ -260,11 +284,8 @@ mod lib_tests {
             .generate();
 
         let code = fs::read_to_string(&out).unwrap();
-        assert!(
-            code.contains("minimum_fraction_digits(2i64)"),
-            "code should reference the named arg builder"
-        );
-        assert!(code.contains("write_to"), "code should call write_to");
+        assert!(code.contains("minimum_fraction_digits(2i64)"));
+        assert!(code.contains("write_to"));
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -300,15 +321,9 @@ mod lib_tests {
 
         let code = fs::read_to_string(&out).unwrap();
         assert!(code.contains("amount: Number"), "should use Number type");
-        assert!(
-            code.contains("minimum_fraction_digits(2i64)"),
-            "should have min frac digits"
-        );
-        assert!(
-            code.contains("style(\"decimal\".to_string())"),
-            "should have style arg"
-        );
-        assert!(code.contains(".write_to(&mut s)"), "should call write_to");
+        assert!(code.contains("minimum_fraction_digits(2i64)"));
+        assert!(code.contains("style(\"decimal\".to_string())"));
+        assert!(code.contains(".write_to(&mut s)"));
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -357,21 +372,46 @@ mod lib_tests {
             .generate();
 
         let code = fs::read_to_string(&out).unwrap();
-        assert!(
-            code.contains("pub struct Test {"),
-            "should emit Test struct"
-        );
-        assert!(code.contains("pub fn new"), "should emit new()");
-        assert!(
-            code.contains("pub fn operator"),
-            "should emit operator builder"
-        );
-        assert!(code.contains("fn write_to"), "should emit write_to");
-        assert!(
-            code.contains("this.operand.unwrap_or"),
-            "should include user body"
-        );
-        assert!(code.contains("v: Test"), "should use Test type in fn sig");
+        assert!(code.contains("pub struct Test {"));
+        assert!(code.contains("pub fn new"));
+        assert!(code.contains("pub fn operator"));
+        assert!(code.contains("fn write_to"));
+        assert!(code.contains("this.operand.unwrap_or"));
+        assert!(code.contains("v: Test"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn builtin_with_lang_param() {
+        let dir = std::path::PathBuf::from(std::env::temp_dir())
+            .join(format!("ftl_lib_builtin_lang_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let locales = dir.join("locales");
+        fs::create_dir_all(&locales).unwrap();
+        fs::write(locales.join("en-US.ftl"), "r = { TEST($v) }\n").unwrap();
+
+        let out = dir.join("out.rs");
+        let test_def = ftl_builtin! {
+            Test(FluentNum) {
+                prefix: String,
+            } impl |this, out, lang| {
+                let _ = lang;
+                write!(out, "{}{}", this.prefix.as_deref().unwrap_or(""), *this.value).unwrap();
+            }
+        };
+        generator()
+            .locales_dir(&locales)
+            .default_lang("en-US")
+            .output_path(&out)
+            .register(test_def)
+            .generate();
+
+        let code = fs::read_to_string(&out).unwrap();
+        assert!(code.contains("fn write_to_with"));
+        assert!(code.contains("lang: Lang"));
 
         let _ = fs::remove_dir_all(&dir);
     }

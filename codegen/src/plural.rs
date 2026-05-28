@@ -17,8 +17,10 @@ const FALLBACK_TWO: &str = "n == 2";
 fn load_cldr() -> &'static RuleCache {
     static RULES: OnceLock<RuleCache> = OnceLock::new();
     RULES.get_or_init(|| {
-        let root: serde_json::Value = serde_json::from_str(include_str!("../cldr/plurals.json"))
-            .expect("Invalid plurals.json");
+        let root: serde_json::Value = serde_json::from_str(include_str!(
+            "../../cldr/cldr-core/supplemental/plurals.json"
+        ))
+        .expect("Invalid plurals.json");
         let mut rules = RuleCache::new();
         let Some(table) = root["supplemental"]["plurals-type-cardinal"].as_object() else {
             return rules;

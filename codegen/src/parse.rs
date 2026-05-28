@@ -606,8 +606,12 @@ impl Generator {
                 writeln!(out).unwrap();
             }
             writeln!(out, "    pub fn write_to(self, out: &mut String) {{").unwrap();
+            writeln!(out, "        self.write_to_with(out, get_locale())").unwrap();
+            writeln!(out, "    }}").unwrap();
+            writeln!(out).unwrap();
+            writeln!(out, "    #[allow(unused_variables)]").unwrap();
+            writeln!(out, "    pub fn write_to_with(self, out: &mut String, lang: Lang) {{").unwrap();
             writeln!(out, "        let this = &self;").unwrap();
-            writeln!(out, "        use std::fmt::Write;").unwrap();
             writeln!(out, "        {}", body).unwrap();
             writeln!(out, "    }}").unwrap();
             writeln!(out, "}}").unwrap();

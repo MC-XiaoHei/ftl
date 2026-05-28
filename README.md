@@ -289,4 +289,4 @@ pub fn title() -> &'static str { "Title: Ms." }
 ## License
 
 MIT License, see [LICENSE](LICENSE).
-CLDR plural rule data (`codegen/cldr/`) is Unicode-3.0.
+CLDR json data (`cldr/`) is Unicode-3.0.
