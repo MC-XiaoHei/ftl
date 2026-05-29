@@ -1,7 +1,7 @@
 ## 1. Basic Messages
 settings = Settings
 hello = Hello, { $name }!
-item-count = You have { $count } items.
+item-count = You have { NUMBER($count) } items.
 
 ## 2. Special Characters & Quoted Text
 brace-demo = Brace: {"{"} and {"}"}
@@ -151,5 +151,9 @@ full-date = { DATETIME($date, monthFormat: "long", yearFormat: "numeric", dayFor
 #   *[other] You finished { $pos }th
 # }
 
-# 13c. Partially-formatted variables (FluentDateTime / FluentNumber)
+# 13c. No context-based type inference
+# Variables are not inferred as FluentDateTime/FluentNumber automatically.
+# You must call DATETIME()/NUMBER() explicitly.
+# Below, $day and $count would be treated as plain string parameters.
 # today = Today is { $day }
+# unread = You have { $count } unread messages.

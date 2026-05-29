@@ -622,6 +622,17 @@ impl Generator {
             writeln!(out, "        {}", body).unwrap();
             writeln!(out, "    }}").unwrap();
             writeln!(out, "}}").unwrap();
+            writeln!(out).unwrap();
+            writeln!(
+                out,
+                "impl<T: Into<FluentNum>> From<T> for {} {{",
+                def.ty_name
+            )
+            .unwrap();
+            writeln!(out, "    fn from(v: T) -> Self {{").unwrap();
+            writeln!(out, "        Self::new(v)").unwrap();
+            writeln!(out, "    }}").unwrap();
+            writeln!(out, "}}").unwrap();
         }
     }
 

@@ -7,7 +7,7 @@ use crate::i18n::*;
 fn print_locale() {
     println!("  settings = {}", t!(settings()));
     println!("  hello    = {}", t!(hello("World")));
-    println!("  item-count = {}", t!(item_count("42")));
+    println!("  item-count = {}", t!(item_count(42)));
     println!("  files(1)   = {}", t!(files(1)));
     println!("  files(99)  = {}", t!(files(99)));
     println!("  about-app  = {}", t!(about_app()));

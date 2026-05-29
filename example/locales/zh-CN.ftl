@@ -1,7 +1,7 @@
 ## 1. 基本消息
 settings = 设置
 hello = 你好，{ $name }！
-item-count = 您有 { $count } 个项目。
+item-count = 您有 { NUMBER($count) } 个项目。
 
 ## 2. 特殊字符与引用文本
 brace-demo = 花括号：{"{"} 和 {"}"}
@@ -151,5 +151,8 @@ full-date = { DATETIME($date, monthFormat: "long", yearFormat: "numeric", dayFor
 #   *[other] 第 { $pos } 名
 # }
 
-# 13c. 部分格式化变量（FluentDateTime / FluentNumber）
+# 13c. 无上下文变量推断
+# 变量不会自动推断为 FluentDateTime/FluentNumber 类型，必须手动调用 DATETIME()/NUMBER() 函数。
+# 下面消息中的 $day 和 $count 将会被视为普通的字符串参数。
 # today = 今天是 { $day }
+# unread = 您有 { $count } 个未读消息。

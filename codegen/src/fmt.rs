@@ -68,17 +68,12 @@ pub fn gen_fn_decl(
         }
         first = false;
         let safe_pname = sanitize(pname);
-        write!(
-            out,
-            "{}: {}",
-            safe_pname,
-            match ptype {
-                ParamType::Str => "&str",
-                ParamType::Num => "impl Into<FluentNum>",
-                ParamType::Builtin(ty) => ty.as_str(),
-            }
-        )
-        .unwrap();
+        write!(out, "{}: ", safe_pname).unwrap();
+        match ptype {
+            ParamType::Str => write!(out, "&str").unwrap(),
+            ParamType::Num => write!(out, "impl Into<FluentNum>").unwrap(),
+            ParamType::Builtin(ty) => write!(out, "impl Into<{}>", ty).unwrap(),
+        }
     }
     write!(out, ")").unwrap();
     if params.is_empty() {
@@ -154,24 +149,12 @@ fn emit_push_statements(
                 let safe_name = sanitize(name);
                 match params.get(name).unwrap_or(&ParamType::Str) {
                     ParamType::Num => {
-                        #[cfg(feature = "builtin")]
-                        {
-                            writeln!(
-                                code,
-                                "{}ftl_builtin::format_number(*{}, None, None, None, None, None, None, None, None, None, &mut s, &super::get_locale().into());",
-                                indent, safe_name
-                            )
-                            .unwrap();
-                        }
-                        #[cfg(not(feature = "builtin"))]
-                        {
-                            writeln!(
-                                code,
-                                "{}write!(&mut s, \"{{}}\", {}).unwrap();",
-                                indent, safe_name
-                            )
-                            .unwrap();
-                        }
+                        writeln!(
+                            code,
+                            "{}write!(&mut s, \"{{}}\", {}).unwrap();",
+                            indent, safe_name
+                        )
+                        .unwrap();
                     }
                     ParamType::Str => {
                         writeln!(code, "{}s.push_str({});", indent, safe_name).unwrap();
@@ -191,7 +174,7 @@ fn emit_push_statements(
                 let def = builtins
                     .get(func_name.as_str())
                     .unwrap_or_else(|| panic!("Built-in function '{}' not registered", func_name));
-                write!(code, "{}{}", indent, safe_var).unwrap();
+                write!(code, "{}{}.into()", indent, safe_var).unwrap();
                 for arg_def in def.named_args.iter() {
                     if let Some(raw_value) = named_args.get(&arg_def.ftl_name) {
                         let rust_value = format_builtin_arg(raw_value, &arg_def.arg_type);
@@ -572,9 +555,6 @@ mod tests {
         let code = generate_one_function("show_count", &elems, &params, "en", &no_builtins());
         assert!(code.contains("show_count"));
         assert!(code.contains("count: impl Into<FluentNum>"));
-        #[cfg(feature = "builtin")]
-        assert!(code.contains("ftl_builtin::format_number(*count,"));
-        #[cfg(not(feature = "builtin"))]
         assert!(code.contains("write!(&mut s, \"{}\", count).unwrap();"));
 
         let mut params = BTreeMap::new();

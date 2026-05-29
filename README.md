@@ -20,7 +20,7 @@ Test Environment: AMD AI 9 H 365, `cargo bench -p example`.
 
 ## Limitations
 
-- Partially-formatted variables (`FluentDateTime` / `FluentNumber`) are unsupported
+- No context-based type inference: variables are not automatically inferred as `FluentDateTime`/`FluentNumber` — you must call `DATETIME()`/`NUMBER()` with explicit named args
 - Function calls as selectors are unsupported
 - The same free variable cannot be inferred as both string-like and numeric-like across all uses
 - Non-primary locales must be structural subsets of the primary locale (messages, terms, and their attributes)
@@ -79,8 +79,6 @@ fn main() {
 
 When enabled, `NUMBER()` and `DATETIME()` built-in functions are automatically registered with locale-aware formatting backed by CLDR data.
 
-Numeric variables (`{ $count }`) are also implicitly formatted through `NUMBER()` — no need to write `NUMBER($count)` in your FTL files.
-
 ```toml
 [build-dependencies]
 ftl-codegen = { version = "0.1", features = ["builtin"] }
@@ -137,15 +135,12 @@ Custom built-ins **do not** require the `builtin` feature.
 **Plain text -> `&'static str`**
 
 ```fluent
-hello_world = Hello, World!
-msg = { "hello" } world
-count = { 42 }
+settings = Settings
 ```
 
 ```rust
-pub fn hello_world() -> &'static str { "Hello, World!" }
-pub fn msg() -> &'static str { "hello world" }
-pub fn count() -> &'static str { "42" }
+#[inline]
+pub fn settings() -> &'static str { "Settings" }
 ```
 
 **Variable interpolation -> Pre-sized `String`**
@@ -155,6 +150,7 @@ hello = Hello, { $name }!
 ```
 
 ```rust
+#[inline]
 pub fn hello(name: &str) -> String {
     let cap = 7 + name.len() + 1;
     let mut s = String::with_capacity(cap);
@@ -165,7 +161,24 @@ pub fn hello(name: &str) -> String {
 }
 ```
 
-**Select expressions -> `match` on numeric or `&str`**
+**Built-in function call -> `write_to` on builtin type**
+
+```fluent
+item-count = You have { NUMBER($count) } items.
+```
+
+```rust
+#[inline]
+pub fn item_count(count: impl Into<Number>) -> String {
+    let mut s = String::with_capacity(9 + 32 + 7);
+    s.push_str("You have ");
+    count.into().write_to(&mut s);
+    s.push_str(" items.");
+    s
+}
+```
+
+**Select expressions -> `match` on `FluentNum` or `&str`**
 
 ```fluent
 files =
@@ -175,84 +188,64 @@ files =
     }
 welcome =
     { $gender ->
-        [male] Welcome, sir
-       *[other] Welcome
+        [male] Welcome, sir!
+       *[other] Welcome!
     }
 ```
 
-Numeric (`$count`) via `impl Into<FluentNum>` — accepts all primitive numeric types:
+Numeric selector via `FluentNum`:
 
 ```rust
+#[inline]
 pub fn files(count: impl Into<FluentNum>) -> String {
     let count: FluentNum = count.into();
     match *count {
         1.0 => "1 file".to_string(),
         _ => {
-            let cap = 32 + 6; // 32 is a conservative fixed bound to avoid runtime width calculation
-            let mut s = String::with_capacity(cap);
+            let mut s = String::with_capacity(32 + 6);
             write!(&mut s, "{}", count).unwrap();
             s.push_str(" files");
             s
-        }
+        },
     }
 }
 ```
 
-String (`$gender`) via `&str`:
+String selector via `&str`:
 
 ```rust
-pub fn welcome(gender: &str) -> String {
+#[inline]
+pub fn user_greeting(gender: &str) -> String {
     match gender {
-        "male" => "Welcome, sir".to_string(),
-        _ => "Welcome".to_string(),
+        "male" => "Welcome, sir!".to_string(),
+        "female" => "Welcome, ma'am!".to_string(),
+        _ => "Welcome!".to_string(),
     }
 }
 ```
-
-*`FluentNum` — unified numeric type*
-
-All `{ $count }` variables and `{ $n -> ... }` selectors use `FluentNum`, a thin wrapper around `f64` with `From` impls for every primitive numeric type.
-
-> **Precision note:** `f64` (IEEE-754 double) can represent integers up to 2⁵³ exactly.
-> Larger integer values may lose precision and fail to match exact numeric selector keys like `[0]` or `[42]`.
-> Plural-category matching additionally relies on `i64`-based guards.
-> Values outside the `i64` range are not guaranteed to produce meaningful category matches.
-
-Match behavior for numeric selectors:
-
-| Variant key | Generated pattern | Notes |
-|---|---|---|
-| `[0]` `[42]` | `0.0 =>`, `42.0 =>` | Exact `f64` match; `-0.0` also matches `0.0` |
-| `[one]` (EN) | `1.0 =>` | Same as `[1]` for English |
-| `[one]` (RU etc.) | `n if (n.trunc() as i64) % 10 == 1` | Truncated to `i64` first |
-| `[few]` | `n if (n.trunc() as i64) % 10 >= 2 && ...` | Same i64 truncation |
-| `[other]` | `_ =>` | Fallback (always required) |
-| `NaN` / `±∞` | — | Non-finite values never participate in category matching; fall to `[other]` |
-
-Plural-category matching is only evaluated for finite integer-valued inputs.
-Fractional values always fall through to the default variant.
-`FluentNum` also implements `Display`, `PartialEq<f64>`, and `Deref<Target=f64>` for direct use in format strings.
 
 **Message reference -> compile-time inlined**
 
 ```fluent
-app-name = Zed
-about = About { app-name }
+app-name = My Application
+about-app = About { app-name }
 ```
 
 ```rust
-pub fn about() -> &'static str { "About Zed" }
+#[inline]
+pub fn about_app() -> &'static str { "About My Application" }
 ```
 
 **Dynamic message ref -> free variable propagation**
 
 ```fluent
 name = { $user }
-welcome = Welcome, { name }!
+welcome-user = Welcome, { name }!
 ```
 
 ```rust
-pub fn welcome(user: &str) -> String {
+#[inline]
+pub fn welcome_user(user: &str) -> String {
     let cap = 9 + user.len() + 1;
     let mut s = String::with_capacity(cap);
     s.push_str("Welcome, ");
@@ -265,40 +258,33 @@ pub fn welcome(user: &str) -> String {
 **Term reference -> compile-time inlined**
 
 ```fluent
--brand-name = Zed
-welcome = Welcome to { -brand-name }
+-brand-name = My Application
+welcome-term = Welcome to { -brand-name }
 ```
 
 ```rust
-pub fn welcome() -> &'static str { "Welcome to Zed" }
+#[inline]
+pub fn welcome_term() -> &'static str { "Welcome to My Application." }
 ```
 
 **Parameterized term -> compile-time inlined**
 
 ```fluent
--brand-name = { $case } Zed
-about = About { -brand-name(case: "Awesome") }
+-brand =
+    { $case ->
+       *[nominative] MyBrand
+        [genitive] MyBrand's
+    }
+about-brand = About { -brand(case: "genitive") }
 ```
 
 ```rust
-pub fn about() -> &'static str { "About Awesome Zed" }
-```
-
-**Parameterized term with var -> Pre-sized `String`**
-
-```fluent
--brand-name = { $case } Zed
-about = About { -brand-name(case: $variant) }
-```
-
-```rust
-pub fn about(variant: &str) -> String {
-    let cap = 7 + variant.len() + 4;
-    let mut s = String::with_capacity(cap);
-    s.push_str("About ");
-    s.push_str(variant);
-    s.push_str(" Zed");
-    s
+#[inline]
+pub fn about_brand(case: &str) -> String {
+    match case {
+        "genitive" => "MyBrand's".to_string(),
+        _ => "MyBrand".to_string(),
+    }
 }
 ```
 
@@ -306,43 +292,54 @@ pub fn about(variant: &str) -> String {
 
 ```fluent
 save =
-    .label = Save
-    .tooltip = Save current file
+    .label = Save { product }
+    .tooltip = Save the current { $target }
 ```
 
 ```rust
-pub fn save__label() -> &'static str { "Save" }
-pub fn save__tooltip() -> &'static str { "Save current file" }
+#[inline]
+pub fn save__label() -> &'static str { "Save Zed" }
+
+#[inline]
+pub fn save__tooltip(target: &str) -> String {
+    let cap = 17 + target.len();
+    let mut s = String::with_capacity(cap);
+    s.push_str("Save the current ");
+    s.push_str(target);
+    s
+}
 ```
 
 **Inline attribute ref -> compile-time inlined**
 
 ```fluent
-msg = Hello
-    .name = World
-greeting = { msg.name }!
+login-input = Default value
+    .placeholder = Enter your email
+attr-ref-demo = Placeholder: { login-input.placeholder }
 ```
 
 ```rust
-pub fn greeting() -> &'static str { "World!" }
+#[inline]
+pub fn attr_ref_demo() -> &'static str { "Placeholder: Enter your email" }
 ```
 
 **Term attribute select -> compile-time inlined**
 
 ```fluent
--brand = Aurora
+-brand-aurora = Aurora
     .gender = feminine
--greeting =
-    { -brand.gender ->
+-brand-gender =
+    { -brand-aurora.gender ->
         [masculine] Mr.
         [feminine] Ms.
        *[other] Mx.
     }
-title = Title: { -greeting }
+attr-select-demo = Title: { -brand-gender }
 ```
 
 ```rust
-pub fn title() -> &'static str { "Title: Ms." }
+#[inline]
+pub fn attr_select_demo() -> &'static str { "Title: Ms." }
 ```
 
 ## License

@@ -1,7 +1,7 @@
 ## 1. 基本的なメッセージ
 settings = 設定
 hello = こんにちは、{ $name }！
-item-count = アイテムが { $count } 個あります。
+item-count = アイテムが { NUMBER($count) } 個あります。
 
 ## 2. 特殊文字と引用テキスト
 brace-demo = 中括弧：{"{"} と {"}"}
@@ -151,5 +151,9 @@ full-date = { DATETIME($date, monthFormat: "long", yearFormat: "numeric", dayFor
 #   *[other] { $pos }位
 # }
 
-# 13c. 部分フォーマット変数（FluentDateTime / FluentNumber）
+# 13c. コンテキストに基づく型推論なし
+# 変数は自動的に FluentDateTime/FluentNumber として推論されません。
+# DATETIME()/NUMBER() 関数を明示的に呼び出す必要があります。
+# 以下の $day や $count は単なる文字列パラメータとして扱われます。
 # today = 今日は { $day } です
+# unread = 未読メッセージが { $count } 件あります。

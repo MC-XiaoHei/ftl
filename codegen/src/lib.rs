@@ -320,7 +320,10 @@ mod lib_tests {
             .generate();
 
         let code = fs::read_to_string(&out).unwrap();
-        assert!(code.contains("amount: Number"), "should use Number type");
+        assert!(
+            code.contains("amount: impl Into<Number>"),
+            "should use impl Into<Number>"
+        );
         assert!(code.contains("minimum_fraction_digits(2i64)"));
         assert!(code.contains("style(\"decimal\".to_string())"));
         assert!(code.contains(".write_to(&mut s)"));
@@ -377,7 +380,7 @@ mod lib_tests {
         assert!(code.contains("pub fn operator"));
         assert!(code.contains("fn write_to"));
         assert!(code.contains("this.operand.unwrap_or"));
-        assert!(code.contains("v: Test"));
+        assert!(code.contains("v: impl Into<Test>"));
 
         let _ = fs::remove_dir_all(&dir);
     }
