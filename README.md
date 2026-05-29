@@ -14,9 +14,9 @@ Compile-time conversion of Fluent (.ftl) translation files to type-safe Rust fun
 Test Environment: AMD AI 9 H 365, `cargo bench -p example`.
 
 - pure text: < 5ns
-- translate with placeholder(include implicate NUMBER() call): < 50ns
-- translate with builtin NUMBER() func: < 1us
-- translate with builtin DATETIME() func: < 5us
+- translate with placeholder: < 50ns
+- translate with NUMBER(): < 1us
+- translate with DATETIME(): < 5us
 
 ## Limitations
 
