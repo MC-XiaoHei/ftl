@@ -1,5 +1,3 @@
-use ftl_codegen::BuiltInFuncDef;
-
 fn main() {
     println!("cargo:rerun-if-changed=locales");
 
@@ -9,7 +7,7 @@ fn main() {
         .generate();
 }
 
-fn test_builtin_func() -> BuiltInFuncDef {
+fn test_builtin_func() -> ftl_codegen::BuiltInFuncDef {
     ftl_codegen::ftl_builtin! {
         Test(FluentNum) {
             operator: String,

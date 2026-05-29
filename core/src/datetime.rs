@@ -6,7 +6,7 @@ use icu_time::zone::{models, TimeZoneInfo};
 use icu_time::{DateTime, Time, TimeZone, ZonedDateTime};
 use writeable::Writeable;
 
-pub fn format_datetime(
+pub fn format(
     year: Option<i64>,
     month: Option<i64>,
     day: Option<i64>,
@@ -99,8 +99,7 @@ pub fn format_datetime(
                     fs.year_style = Some(v);
                 }
                 fs.time_precision = Some(tp);
-                let fmt = DateTimeFormatter::try_new(prefs.clone(), fs)
-                    .expect("compiled_data should always be available");
+                let fmt = DateTimeFormatter::try_new(prefs.clone(), fs).expect("compiled_data");
                 let _ = fmt.format(&dt).write_to(out);
             } else {
                 let mut fs = YMDT::for_length(length);
@@ -108,8 +107,7 @@ pub fn format_datetime(
                     fs.year_style = Some(v);
                 }
                 fs.time_precision = Some(tp);
-                let fmt = DateTimeFormatter::try_new(prefs.clone(), fs)
-                    .expect("compiled_data should always be available");
+                let fmt = DateTimeFormatter::try_new(prefs.clone(), fs).expect("compiled_data");
                 let _ = fmt.format(&dt).write_to(out);
             }
         } else {
@@ -133,7 +131,7 @@ pub fn format_datetime(
                 }
                 let fmt =
                     FixedCalendarDateTimeFormatter::<Gregorian, _>::try_new(prefs.clone(), fs)
-                        .expect("compiled_data should always be available");
+                        .expect("compiled_data");
                 let _ = fmt.format(&date).write_to(out);
             } else {
                 let mut fs = YMD::for_length(length);
@@ -142,7 +140,7 @@ pub fn format_datetime(
                 }
                 let fmt =
                     FixedCalendarDateTimeFormatter::<Gregorian, _>::try_new(prefs.clone(), fs)
-                        .expect("compiled_data should always be available");
+                        .expect("compiled_data");
                 let _ = fmt.format(&date).write_to(out);
             }
         }
@@ -175,6 +173,7 @@ pub fn format_datetime(
         }
     }
 }
+
 fn zoned(
     dt: DateTime<Gregorian>,
     has_wd: bool,
@@ -200,11 +199,11 @@ fn zoned(
         y.time_precision = Some(tp);
         if tz_name == Some("short") {
             let fmt = DateTimeFormatter::try_new(prefs.clone(), y.with_zone(zone::SpecificShort))
-                .expect("compiled_data should always be available");
+                .expect("compiled_data");
             let _ = fmt.format(&zd).write_to(out);
         } else {
             let fmt = DateTimeFormatter::try_new(prefs.clone(), y.with_zone(zone::SpecificLong))
-                .expect("compiled_data should always be available");
+                .expect("compiled_data");
             let _ = fmt.format(&zd).write_to(out);
         }
     } else {
@@ -215,11 +214,11 @@ fn zoned(
         y.time_precision = Some(tp);
         if tz_name == Some("short") {
             let fmt = DateTimeFormatter::try_new(prefs.clone(), y.with_zone(zone::SpecificShort))
-                .expect("compiled_data should always be available");
+                .expect("compiled_data");
             let _ = fmt.format(&zd).write_to(out);
         } else {
             let fmt = DateTimeFormatter::try_new(prefs.clone(), y.with_zone(zone::SpecificLong))
-                .expect("compiled_data should always be available");
+                .expect("compiled_data");
             let _ = fmt.format(&zd).write_to(out);
         }
     }
@@ -236,13 +235,14 @@ fn zoned_without_time(
     out: &mut String,
 ) {
     let tz_info = build_tz(tz);
-    let time = Time::try_new(0, 0, 0, 0).expect("midnight time is always valid");
+    let time = Time::try_new(0, 0, 0, 0).expect("midnight time");
     let dt = DateTime { date, time };
     let zd = ZonedDateTime {
         date,
         time,
         zone: tz_info.at_date_time(dt),
     };
+
     if has_wd {
         let mut y = YMDE::for_length(length);
         if let Some(v) = yf {
@@ -250,11 +250,11 @@ fn zoned_without_time(
         }
         if tz_name == Some("short") {
             let fmt = DateTimeFormatter::try_new(prefs.clone(), y.with_zone(zone::SpecificShort))
-                .expect("compiled_data should always be available");
+                .expect("compiled_data");
             let _ = fmt.format(&zd).write_to(out);
         } else {
             let fmt = DateTimeFormatter::try_new(prefs.clone(), y.with_zone(zone::SpecificLong))
-                .expect("compiled_data should always be available");
+                .expect("compiled_data");
             let _ = fmt.format(&zd).write_to(out);
         }
     } else {
@@ -264,15 +264,16 @@ fn zoned_without_time(
         }
         if tz_name == Some("short") {
             let fmt = DateTimeFormatter::try_new(prefs.clone(), y.with_zone(zone::SpecificShort))
-                .expect("compiled_data should always be available");
+                .expect("compiled_data");
             let _ = fmt.format(&zd).write_to(out);
         } else {
             let fmt = DateTimeFormatter::try_new(prefs.clone(), y.with_zone(zone::SpecificLong))
-                .expect("compiled_data should always be available");
+                .expect("compiled_data");
             let _ = fmt.format(&zd).write_to(out);
         }
     }
 }
+
 fn format_zone_datetime(
     dt: DateTime<Gregorian>,
     ds: &str,
@@ -283,11 +284,10 @@ fn format_zone_datetime(
     out: &mut String,
 ) {
     let tz_base = build_tz(tz);
-    let tz_at = tz_base.at_date_time(dt);
     let zd = ZonedDateTime {
         date: dt.date,
         time: dt.time,
-        zone: tz_at,
+        zone: tz_base.at_date_time(dt),
     };
     let (length, tp) = match (ds, ts) {
         ("long", "long") => (Length::Long, TimePrecision::Second),
@@ -301,12 +301,12 @@ fn format_zone_datetime(
     match tz_name {
         Some("short") => {
             let fmt = DateTimeFormatter::try_new(prefs.clone(), y.with_zone(zone::SpecificShort))
-                .expect("compiled_data should always be available");
+                .expect("compiled_data");
             let _ = fmt.format(&zd).write_to(out);
         }
         _ => {
             let fmt = DateTimeFormatter::try_new(prefs.clone(), y.with_zone(zone::SpecificLong))
-                .expect("compiled_data should always be available");
+                .expect("compiled_data");
             let _ = fmt.format(&zd).write_to(out);
         }
     }
@@ -321,13 +321,12 @@ fn format_zone_date_only(
     out: &mut String,
 ) {
     let tz_base = build_tz(tz);
-    let time = Time::try_new(0, 0, 0, 0).expect("midnight time is always valid");
+    let time = Time::try_new(0, 0, 0, 0).expect("midnight time");
     let dt = DateTime { date, time };
-    let tz_at = tz_base.at_date_time(dt);
     let zd = ZonedDateTime {
         date,
         time,
-        zone: tz_at,
+        zone: tz_base.at_date_time(dt),
     };
     let y = match ds {
         "long" => YMD::long(),
@@ -337,12 +336,12 @@ fn format_zone_date_only(
     match tz_name {
         Some("short") => {
             let fmt = DateTimeFormatter::try_new(prefs.clone(), y.with_zone(zone::SpecificShort))
-                .expect("compiled_data should always be available");
+                .expect("compiled_data");
             let _ = fmt.format(&zd).write_to(out);
         }
         _ => {
             let fmt = DateTimeFormatter::try_new(prefs.clone(), y.with_zone(zone::SpecificLong))
-                .expect("compiled_data should always be available");
+                .expect("compiled_data");
             let _ = fmt.format(&zd).write_to(out);
         }
     }
@@ -353,6 +352,90 @@ fn build_tz(tz: Option<&str>) -> TimeZoneInfo<models::Base> {
         Some(id) => TimeZone::from_iana_id(id).without_offset(),
         None => TimeZoneInfo::utc(),
     }
+}
+
+fn format_style_date_only(
+    date: Date<Gregorian>,
+    ds: &str,
+    prefs: &icu_datetime::DateTimeFormatterPreferences,
+    out: &mut String,
+) {
+    let fs = match ds {
+        "long" => YMD::long(),
+        "short" => YMD::short(),
+        _ => YMD::medium(),
+    };
+    let fmt = FixedCalendarDateTimeFormatter::<Gregorian, _>::try_new(prefs.clone(), fs)
+        .expect("compiled_data");
+    let _ = fmt.format(&date).write_to(out);
+}
+
+fn format_style_with_time(
+    dt: DateTime<Gregorian>,
+    ds: &str,
+    ts: &str,
+    prefs: &icu_datetime::DateTimeFormatterPreferences,
+    out: &mut String,
+) {
+    let (length, tp) = match (ds, ts) {
+        ("long", "long") => (Length::Long, TimePrecision::Second),
+        ("long", _) => (Length::Long, TimePrecision::Minute),
+        ("short", "short") => (Length::Short, TimePrecision::Minute),
+        ("short", _) => (Length::Short, TimePrecision::Second),
+        _ => (Length::Medium, TimePrecision::Second),
+    };
+    let mut fs = YMDT::for_length(length);
+    fs.time_precision = Some(tp);
+    let fmt = DateTimeFormatter::try_new(prefs.clone(), fs).expect("compiled_data");
+    let _ = fmt.format(&dt).write_to(out);
+}
+
+fn pick_length(yf: Option<&str>, mf: Option<&str>, df: Option<&str>, wd: Option<&str>) -> Length {
+    for &v in &[yf, mf, df, wd] {
+        if let Some(s) = v {
+            match s {
+                "long" => return Length::Long,
+                "short" | "narrow" | "2-digit" => return Length::Short,
+                _ => {}
+            }
+        }
+    }
+    Length::Medium
+}
+
+fn pick_time_precision(_hf: Option<&str>, _mf: Option<&str>, sf: Option<&str>) -> TimePrecision {
+    if sf.is_some() {
+        TimePrecision::Second
+    } else {
+        TimePrecision::Minute
+    }
+}
+
+fn resolve_prefs(
+    locale: &unic_langid::LanguageIdentifier,
+    hour12: Option<bool>,
+) -> icu_datetime::DateTimeFormatterPreferences {
+    let suffix = match hour12 {
+        Some(true) => "-u-hc-h12",
+        Some(false) => "-u-hc-h23",
+        None => return to_prefs(locale),
+    };
+    let s = format!("{}{}", locale.to_string(), suffix);
+    s.parse::<icu_locale_core::Locale>()
+        .ok()
+        .map(|l| l.into())
+        .unwrap_or_default()
+}
+
+fn to_prefs(
+    locale: &unic_langid::LanguageIdentifier,
+) -> icu_datetime::DateTimeFormatterPreferences {
+    locale
+        .to_string()
+        .parse::<icu_locale_core::Locale>()
+        .ok()
+        .map(|l| l.into())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -387,11 +470,28 @@ mod tests {
                 _ => {}
             }
         }
-        format_datetime(
+        format(
             y, m, d, hh, mm, ss, ds, ts, None, None, None, None, None, None, None, None, None,
             None, None, &mut out, loc,
         );
         out
+    }
+
+    #[test]
+    fn date_unknown_option() {
+        // exercise the catch-all `_ => {}` branch in test helper
+        let r = fmt(
+            &[
+                ("year", 2024),
+                ("month", 5),
+                ("day", 17),
+                ("nonexistent", 0),
+            ],
+            None,
+            None,
+            &en(),
+        );
+        assert!(r.contains("May"), "got: {r}");
     }
 
     #[test]
@@ -427,7 +527,7 @@ mod tests {
     #[test]
     fn date_invalid() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(2),
             Some(30),
@@ -498,7 +598,7 @@ mod tests {
     #[test]
     fn datetime_bad_time() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -535,15 +635,14 @@ mod tests {
     }
     #[test]
     fn to_prefs_ok() {
-        let loc = "de".parse().unwrap();
+        let loc = locale("de");
         let p = to_prefs(&loc);
         assert!(DateTimeFormatter::try_new(p, YMD::medium()).is_ok());
     }
-
     #[test]
     fn ind_month_long() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -571,7 +670,7 @@ mod tests {
     #[test]
     fn ind_year_2digit() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -599,7 +698,7 @@ mod tests {
     #[test]
     fn ind_weekday() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -627,7 +726,7 @@ mod tests {
     #[test]
     fn ind_no_params() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -655,7 +754,7 @@ mod tests {
     #[test]
     fn ind_weekday_time() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -683,7 +782,7 @@ mod tests {
     #[test]
     fn ind_second_precision() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -711,7 +810,7 @@ mod tests {
     #[test]
     fn ind_era_long() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -739,7 +838,7 @@ mod tests {
     #[test]
     fn ind_era_short() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -767,7 +866,7 @@ mod tests {
     #[test]
     fn ind_era_narrow() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -795,7 +894,7 @@ mod tests {
     #[test]
     fn ind_bad_time_wd() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -823,7 +922,7 @@ mod tests {
     #[test]
     fn ind_time_no_wd() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -851,7 +950,7 @@ mod tests {
     #[test]
     fn style_date_long() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -879,7 +978,7 @@ mod tests {
     #[test]
     fn style_time_short() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -907,7 +1006,7 @@ mod tests {
     #[test]
     fn style_short_short() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -938,7 +1037,7 @@ mod tests {
     #[test]
     fn style_short_med() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -969,7 +1068,7 @@ mod tests {
     #[test]
     fn hour12_true() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -997,7 +1096,7 @@ mod tests {
     #[test]
     fn hour12_false() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -1022,406 +1121,10 @@ mod tests {
         );
         assert!(out.contains("13"), "got: {out}");
     }
-
-    #[test]
-    fn zone_date_only() {
-        let mut out = String::new();
-        format_datetime(
-            Some(2024),
-            Some(5),
-            Some(17),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some("long"),
-            None,
-            None,
-            &mut out,
-            &en(),
-        );
-        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
-    }
-    #[test]
-    fn zone_datetime() {
-        let mut out = String::new();
-        format_datetime(
-            Some(2024),
-            Some(5),
-            Some(17),
-            Some(14),
-            Some(30),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some("short"),
-            None,
-            None,
-            &mut out,
-            &en(),
-        );
-        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
-    }
-    #[test]
-    fn zone_ind_time() {
-        let mut out = String::new();
-        format_datetime(
-            Some(2024),
-            Some(5),
-            Some(17),
-            Some(10),
-            Some(20),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some("Asia/Shanghai"),
-            &mut out,
-            &en(),
-        );
-        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
-    }
-    #[test]
-    fn zone_ind_no_time() {
-        let mut out = String::new();
-        format_datetime(
-            Some(2024),
-            Some(5),
-            Some(17),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some("numeric"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some("UTC"),
-            &mut out,
-            &en(),
-        );
-        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
-    }
-    #[test]
-    fn zone_ind_wd_time() {
-        let mut out = String::new();
-        format_datetime(
-            Some(2024),
-            Some(5),
-            Some(17),
-            Some(14),
-            Some(30),
-            None,
-            None,
-            None,
-            Some("long"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some("America/New_York"),
-            &mut out,
-            &en(),
-        );
-        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
-    }
-    #[test]
-    fn zone_style_time() {
-        let mut out = String::new();
-        format_datetime(
-            Some(2024),
-            Some(5),
-            Some(17),
-            Some(14),
-            Some(30),
-            None,
-            Some("long"),
-            Some("short"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some("short"),
-            None,
-            None,
-            &mut out,
-            &en(),
-        );
-        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
-    }
-
-    #[test]
-    fn zone_ind_has_zone_time() {
-        let mut out = String::new();
-        format_datetime(
-            Some(2024),
-            Some(5),
-            Some(17),
-            Some(10),
-            Some(20),
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some("numeric"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some("long"),
-            None,
-            None,
-            &mut out,
-            &en(),
-        );
-        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
-    }
-    #[test]
-    fn zone_ind_no_time_tz() {
-        let mut out = String::new();
-        format_datetime(
-            Some(2024),
-            Some(5),
-            Some(17),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some("numeric"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some("short"),
-            None,
-            Some("Europe/London"),
-            &mut out,
-            &en(),
-        );
-        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
-    }
-    #[test]
-    fn zone_ind_wd_no_time_tz() {
-        let mut out = String::new();
-        format_datetime(
-            Some(2024),
-            Some(5),
-            Some(17),
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some("long"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some("long"),
-            None,
-            None,
-            &mut out,
-            &en(),
-        );
-        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
-    }
-    #[test]
-    fn zone_ind_wd_time_tz() {
-        let mut out = String::new();
-        format_datetime(
-            Some(2024),
-            Some(5),
-            Some(17),
-            Some(10),
-            Some(20),
-            Some(30),
-            None,
-            None,
-            Some("long"),
-            None,
-            None,
-            Some("long"),
-            None,
-            None,
-            None,
-            Some("numeric"),
-            None,
-            None,
-            Some("Asia/Tokyo"),
-            &mut out,
-            &en(),
-        );
-        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
-    }
-    #[test]
-    fn zone_style_tz() {
-        let mut out = String::new();
-        format_datetime(
-            Some(2024),
-            Some(5),
-            Some(17),
-            Some(14),
-            Some(30),
-            None,
-            Some("long"),
-            Some("short"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some("America/Chicago"),
-            &mut out,
-            &en(),
-        );
-        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
-    }
-
-    #[test]
-    fn zone_ind_wd_no_time_short() {
-        let mut out = String::new();
-        format_datetime(
-            Some(2024),
-            Some(5),
-            Some(17),
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some("long"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some("short"),
-            None,
-            None,
-            &mut out,
-            &en(),
-        );
-        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
-    }
-    #[test]
-    fn zone_ind_time_short() {
-        let mut out = String::new();
-        format_datetime(
-            Some(2024),
-            Some(5),
-            Some(17),
-            Some(10),
-            Some(20),
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some("numeric"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some("short"),
-            None,
-            None,
-            &mut out,
-            &en(),
-        );
-        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
-    }
-    #[test]
-    fn zone_ind_wd_time_short() {
-        let mut out = String::new();
-        format_datetime(
-            Some(2024),
-            Some(5),
-            Some(17),
-            Some(10),
-            Some(20),
-            None,
-            None,
-            None,
-            Some("long"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some("short"),
-            None,
-            None,
-            &mut out,
-            &en(),
-        );
-        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
-    }
-
     #[test]
     fn ind_wd_era_time() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -1449,7 +1152,7 @@ mod tests {
     #[test]
     fn ind_wd_era_no_time() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -1477,7 +1180,7 @@ mod tests {
     #[test]
     fn ind_era_time() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -1502,11 +1205,318 @@ mod tests {
         );
         assert!(out.contains("2024"), "got: {out}");
     }
-
+    #[test]
+    fn zone_date_only() {
+        let mut out = String::new();
+        format(
+            Some(2024),
+            Some(5),
+            Some(17),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("long"),
+            None,
+            None,
+            &mut out,
+            &en(),
+        );
+        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
+    }
+    #[test]
+    fn zone_datetime() {
+        let mut out = String::new();
+        format(
+            Some(2024),
+            Some(5),
+            Some(17),
+            Some(14),
+            Some(30),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("short"),
+            None,
+            None,
+            &mut out,
+            &en(),
+        );
+        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
+    }
+    #[test]
+    fn zone_ind_time() {
+        let mut out = String::new();
+        format(
+            Some(2024),
+            Some(5),
+            Some(17),
+            Some(10),
+            Some(20),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("Asia/Shanghai"),
+            &mut out,
+            &en(),
+        );
+        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
+    }
+    #[test]
+    fn zone_ind_no_time() {
+        let mut out = String::new();
+        format(
+            Some(2024),
+            Some(5),
+            Some(17),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("numeric"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("UTC"),
+            &mut out,
+            &en(),
+        );
+        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
+    }
+    #[test]
+    fn zone_ind_wd_time() {
+        let mut out = String::new();
+        format(
+            Some(2024),
+            Some(5),
+            Some(17),
+            Some(14),
+            Some(30),
+            None,
+            None,
+            None,
+            Some("long"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("America/New_York"),
+            &mut out,
+            &en(),
+        );
+        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
+    }
+    #[test]
+    fn zone_style_time() {
+        let mut out = String::new();
+        format(
+            Some(2024),
+            Some(5),
+            Some(17),
+            Some(14),
+            Some(30),
+            None,
+            Some("long"),
+            Some("short"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("short"),
+            None,
+            None,
+            &mut out,
+            &en(),
+        );
+        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
+    }
+    #[test]
+    fn zone_ind_has_zone_time() {
+        let mut out = String::new();
+        format(
+            Some(2024),
+            Some(5),
+            Some(17),
+            Some(10),
+            Some(20),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("numeric"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("long"),
+            None,
+            None,
+            &mut out,
+            &en(),
+        );
+        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
+    }
+    #[test]
+    fn zone_ind_no_time_tz() {
+        let mut out = String::new();
+        format(
+            Some(2024),
+            Some(5),
+            Some(17),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("numeric"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("short"),
+            None,
+            Some("Europe/London"),
+            &mut out,
+            &en(),
+        );
+        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
+    }
+    #[test]
+    fn zone_ind_wd_no_time_tz() {
+        let mut out = String::new();
+        format(
+            Some(2024),
+            Some(5),
+            Some(17),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("long"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("long"),
+            None,
+            None,
+            &mut out,
+            &en(),
+        );
+        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
+    }
+    #[test]
+    fn zone_ind_wd_time_tz() {
+        let mut out = String::new();
+        format(
+            Some(2024),
+            Some(5),
+            Some(17),
+            Some(10),
+            Some(20),
+            Some(30),
+            None,
+            None,
+            Some("long"),
+            None,
+            None,
+            Some("long"),
+            None,
+            None,
+            None,
+            Some("numeric"),
+            None,
+            None,
+            Some("Asia/Tokyo"),
+            &mut out,
+            &en(),
+        );
+        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
+    }
+    #[test]
+    fn zone_style_tz() {
+        let mut out = String::new();
+        format(
+            Some(2024),
+            Some(5),
+            Some(17),
+            Some(14),
+            Some(30),
+            None,
+            Some("long"),
+            Some("short"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("America/Chicago"),
+            &mut out,
+            &en(),
+        );
+        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
+    }
     #[test]
     fn z_date_long() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -1534,7 +1544,7 @@ mod tests {
     #[test]
     fn z_date_short() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -1562,7 +1572,7 @@ mod tests {
     #[test]
     fn z_long_long() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -1590,7 +1600,7 @@ mod tests {
     #[test]
     fn z_short_short() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -1618,7 +1628,7 @@ mod tests {
     #[test]
     fn z_short_med() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -1643,11 +1653,10 @@ mod tests {
         );
         assert!(out.contains("24"), "got:{out}");
     }
-
     #[test]
     fn z_wd_era_no_time() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -1675,7 +1684,7 @@ mod tests {
     #[test]
     fn z_wd_era_time() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -1703,7 +1712,7 @@ mod tests {
     #[test]
     fn z_era_no_wd_time() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -1731,7 +1740,7 @@ mod tests {
     #[test]
     fn z_era_no_wd_no_time() {
         let mut out = String::new();
-        format_datetime(
+        format(
             Some(2024),
             Some(5),
             Some(17),
@@ -1756,88 +1765,88 @@ mod tests {
         );
         assert!(out.contains("2024") || out.contains("UTC"), "got:{out}");
     }
-}
-
-fn format_style_date_only(
-    date: Date<Gregorian>,
-    ds: &str,
-    prefs: &icu_datetime::DateTimeFormatterPreferences,
-    out: &mut String,
-) {
-    let fs = match ds {
-        "long" => YMD::long(),
-        "short" => YMD::short(),
-        _ => YMD::medium(),
-    };
-    let fmt = FixedCalendarDateTimeFormatter::<Gregorian, _>::try_new(prefs.clone(), fs)
-        .expect("compiled_data should always be available");
-    let _ = fmt.format(&date).write_to(out);
-}
-
-fn format_style_with_time(
-    dt: DateTime<Gregorian>,
-    ds: &str,
-    ts: &str,
-    prefs: &icu_datetime::DateTimeFormatterPreferences,
-    out: &mut String,
-) {
-    let (length, tp) = match (ds, ts) {
-        ("long", "long") => (Length::Long, TimePrecision::Second),
-        ("long", _) => (Length::Long, TimePrecision::Minute),
-        ("short", "short") => (Length::Short, TimePrecision::Minute),
-        ("short", _) => (Length::Short, TimePrecision::Second),
-        _ => (Length::Medium, TimePrecision::Second),
-    };
-    let mut fs = YMDT::for_length(length);
-    fs.time_precision = Some(tp);
-    let fmt = DateTimeFormatter::try_new(prefs.clone(), fs)
-        .expect("compiled_data should always be available");
-    let _ = fmt.format(&dt).write_to(out);
-}
-
-fn pick_length(yf: Option<&str>, mf: Option<&str>, df: Option<&str>, wd: Option<&str>) -> Length {
-    for &v in &[yf, mf, df, wd] {
-        if let Some(s) = v {
-            match s {
-                "long" => return Length::Long,
-                "short" | "narrow" | "2-digit" => return Length::Short,
-                _ => {}
-            }
-        }
+    #[test]
+    fn zone_ind_wd_no_time_short() {
+        let mut out = String::new();
+        format(
+            Some(2024),
+            Some(5),
+            Some(17),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("long"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("short"),
+            None,
+            None,
+            &mut out,
+            &en(),
+        );
+        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
     }
-    Length::Medium
-}
-
-fn pick_time_precision(_hf: Option<&str>, _mf: Option<&str>, sf: Option<&str>) -> TimePrecision {
-    if sf.is_some() {
-        TimePrecision::Second
-    } else {
-        TimePrecision::Minute
+    #[test]
+    fn zone_ind_time_short() {
+        let mut out = String::new();
+        format(
+            Some(2024),
+            Some(5),
+            Some(17),
+            Some(10),
+            Some(20),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("numeric"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("short"),
+            None,
+            None,
+            &mut out,
+            &en(),
+        );
+        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
     }
-}
-
-fn resolve_prefs(
-    locale: &unic_langid::LanguageIdentifier,
-    hour12: Option<bool>,
-) -> icu_datetime::DateTimeFormatterPreferences {
-    let suffix = match hour12 {
-        Some(true) => "-u-hc-h12",
-        Some(false) => "-u-hc-h23",
-        None => return to_prefs(locale),
-    };
-    let s = format!("{}{}", locale.to_string(), suffix);
-    s.parse::<icu_locale_core::Locale>()
-        .ok()
-        .map(|l| l.into())
-        .unwrap_or_default()
-}
-
-fn to_prefs(
-    locale: &unic_langid::LanguageIdentifier,
-) -> icu_datetime::DateTimeFormatterPreferences {
-    let s = locale.to_string();
-    s.parse::<icu_locale_core::Locale>()
-        .ok()
-        .map(|l| l.into())
-        .unwrap_or_default()
+    #[test]
+    fn zone_ind_wd_time_short() {
+        let mut out = String::new();
+        format(
+            Some(2024),
+            Some(5),
+            Some(17),
+            Some(10),
+            Some(20),
+            None,
+            None,
+            None,
+            Some("long"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("short"),
+            None,
+            None,
+            &mut out,
+            &en(),
+        );
+        assert!(out.contains("2024") || out.contains("UTC"), "got: {out}");
+    }
 }

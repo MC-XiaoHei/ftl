@@ -56,7 +56,12 @@ pub fn gen_fn_decl(
 ) -> String {
     let mut out = String::new();
     let safe_name = sanitize(name);
-    write!(out, "{}(", safe_name).unwrap();
+    let has_str = params.values().any(|t| *t == ParamType::Str);
+    write!(out, "{}", safe_name).unwrap();
+    if has_str {
+        write!(out, "<'a>").unwrap();
+    }
+    write!(out, "(").unwrap();
     let mut first = true;
     if with_self {
         write!(out, "&self").unwrap();
@@ -70,9 +75,9 @@ pub fn gen_fn_decl(
         let safe_pname = sanitize(pname);
         write!(out, "{}: ", safe_pname).unwrap();
         match ptype {
-            ParamType::Str => write!(out, "&str").unwrap(),
+            ParamType::Str => write!(out, "impl Into<ftl_core::FluentArg<'a>>").unwrap(),
             ParamType::Num => write!(out, "impl Into<FluentNum>").unwrap(),
-            ParamType::Builtin(ty) => write!(out, "impl Into<{}>", ty).unwrap(),
+            ParamType::Builtin(ty) => write!(out, "{}", ty).unwrap(),
         }
     }
     write!(out, ")").unwrap();
@@ -103,10 +108,9 @@ fn capacity_expr(elements: &[Element], params: &BTreeMap<String, ParamType>) -> 
                     parts.push(acc.to_string());
                     acc = 0;
                 }
-                let safe_name = sanitize(name);
                 parts.push(match params.get(name).unwrap_or(&ParamType::Str) {
                     ParamType::Num => "32".to_string(),
-                    ParamType::Str => format!("{}.len()", safe_name),
+                    ParamType::Str => "32".to_string(),
                     ParamType::Builtin(_) => "32".to_string(),
                 });
             }
@@ -157,7 +161,12 @@ fn emit_push_statements(
                         .unwrap();
                     }
                     ParamType::Str => {
-                        writeln!(code, "{}s.push_str({});", indent, safe_name).unwrap();
+                        writeln!(
+                            code,
+                            "{}{}.into().write_localized(&mut s);",
+                            indent, safe_name
+                        )
+                        .unwrap();
                     }
                     ParamType::Builtin(_) => {
                         writeln!(code, "{}{}.write_to(&mut s);", indent, safe_name).unwrap();
@@ -169,12 +178,109 @@ fn emit_push_statements(
                 var_name,
                 named_args,
                 ..
+            } if func_name == "NUMBER" => {
+                let safe_var = sanitize(var_name);
+                let v = |name: &str| -> String {
+                    match named_args.get(name) {
+                        Some(raw) => format!("Some({}i64)", raw),
+                        None => "None".to_string(),
+                    }
+                };
+                let v_bool = |name: &str| -> String {
+                    match named_args.get(name) {
+                        Some(raw) if raw.eq_ignore_ascii_case("true") || raw == "1" => {
+                            "Some(true)".to_string()
+                        }
+                        Some(_) => "Some(false)".to_string(),
+                        None => "None".to_string(),
+                    }
+                };
+                let v_str = |name: &str| -> String {
+                    match named_args.get(name) {
+                        Some(raw) => format!("Some(\"{}\")", raw),
+                        None => "None".to_string(),
+                    }
+                };
+                writeln!(
+                    code,
+                    "{}ftl_core::number::format(*{}, {}, {}, {}, {}, {}, {}, {}, {}, {}, &mut s, &ftl_core::locale());",
+                    indent,
+                    safe_var,
+                    v("minimumFractionDigits"),
+                    v("maximumFractionDigits"),
+                    v("minimumSignificantDigits"),
+                    v("maximumSignificantDigits"),
+                    v("minimumIntegerDigits"),
+                    v_bool("useGrouping"),
+                    v_str("style"),
+                    v_str("currency"),
+                    v_str("currencyDisplay"),
+                )
+                .unwrap();
+            }
+            Element::BuiltInCall {
+                func_name,
+                named_args,
+                ..
+            } if func_name == "DATETIME" => {
+                let v_i64 = |name: &str| -> String {
+                    match named_args.get(name) {
+                        Some(raw) => format!("Some({}i64)", raw),
+                        None => "None".to_string(),
+                    }
+                };
+                let v_bool = |name: &str| -> String {
+                    match named_args.get(name) {
+                        Some(raw) if raw.eq_ignore_ascii_case("true") || raw == "1" => {
+                            "Some(true)".to_string()
+                        }
+                        Some(_) => "Some(false)".to_string(),
+                        None => "None".to_string(),
+                    }
+                };
+                let v_str = |name: &str| -> String {
+                    match named_args.get(name) {
+                        Some(raw) => format!("Some(\"{}\")", raw),
+                        None => "None".to_string(),
+                    }
+                };
+                writeln!(
+                    code,
+                    "{}ftl_core::datetime::format({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, &mut s, &ftl_core::locale());",
+                    indent,
+                    v_i64("year"),
+                    v_i64("month"),
+                    v_i64("day"),
+                    v_i64("hour"),
+                    v_i64("minute"),
+                    v_i64("second"),
+                    v_str("dateStyle"),
+                    v_str("timeStyle"),
+                    v_str("weekday"),
+                    v_str("era"),
+                    v_str("yearFormat"),
+                    v_str("monthFormat"),
+                    v_str("dayFormat"),
+                    v_str("hourFormat"),
+                    v_str("minuteFormat"),
+                    v_str("secondFormat"),
+                    v_str("timeZoneName"),
+                    v_bool("hour12"),
+                    v_str("timeZone"),
+                )
+                .unwrap();
+            }
+            Element::BuiltInCall {
+                func_name,
+                var_name,
+                named_args,
+                ..
             } => {
                 let safe_var = sanitize(var_name);
                 let def = builtins
                     .get(func_name.as_str())
                     .unwrap_or_else(|| panic!("Built-in function '{}' not registered", func_name));
-                write!(code, "{}{}.into()", indent, safe_var).unwrap();
+                write!(code, "{}{}", indent, safe_var).unwrap();
                 for arg_def in def.named_args.iter() {
                     if let Some(raw_value) = named_args.get(&arg_def.ftl_name) {
                         let rust_value = format_builtin_arg(raw_value, &arg_def.arg_type);
@@ -188,21 +294,6 @@ fn emit_push_statements(
             | Element::TermRef { .. }
             | Element::AttributeRef { .. }
             | Element::TermAttrSelect { .. } => unreachable!(),
-        }
-    }
-}
-
-fn format_builtin_arg(raw: &str, arg_type: &BuiltInArgType) -> String {
-    match arg_type {
-        BuiltInArgType::String => format!("\"{}\".to_string()", raw),
-        BuiltInArgType::Int => format!("{}i64", raw),
-        BuiltInArgType::Float => format!("{}f64", raw),
-        BuiltInArgType::Bool => {
-            if raw.eq_ignore_ascii_case("true") || raw == "1" {
-                "true".to_string()
-            } else {
-                "false".to_string()
-            }
         }
     }
 }
@@ -243,7 +334,6 @@ fn gen_select_body(
 
     let mut code = String::new();
 
-    // For built-in type selectors, delegate to the built-in
     if let ParamType::Builtin(_) = selector_type {
         panic!(
             "Cannot use '{}' (built-in type) as a select selector",
@@ -252,7 +342,16 @@ fn gen_select_body(
     }
 
     if selector_type == &ParamType::Str {
-        writeln!(code, "    match {} {{", safe_selector).unwrap();
+        writeln!(
+            code,
+            "    let __sel: String = match {}.into() {{",
+            safe_selector
+        )
+        .unwrap();
+        writeln!(code, "        FluentArg::Str(s) => s.into_owned(),").unwrap();
+        writeln!(code, "        _ => return String::new(),").unwrap();
+        writeln!(code, "    }};").unwrap();
+        writeln!(code, "    match __sel.as_str() {{").unwrap();
         for v in variants.iter().filter(|v| !v.default) {
             writeln!(
                 code,
@@ -356,7 +455,22 @@ fn variant_arm_pattern(
             .unwrap_or_else(|| "n if false".to_string()),
         (KeyType::Ident(cat), ParamType::Str) => format!("\"{}\"", escape_str(cat)),
         (_, ParamType::Builtin(_)) => {
-            panic!("Built-in type cannot be used in select variant pattern")
+            panic!("Built-in type cannot be used in select variant pattern");
+        }
+    }
+}
+
+fn format_builtin_arg(raw: &str, arg_type: &BuiltInArgType) -> String {
+    match arg_type {
+        BuiltInArgType::String => format!("\"{}\".to_string()", raw),
+        BuiltInArgType::Int => format!("{}i64", raw),
+        BuiltInArgType::Float => format!("{}f64", raw),
+        BuiltInArgType::Bool => {
+            if raw.eq_ignore_ascii_case("true") || raw == "1" {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            }
         }
     }
 }
@@ -397,7 +511,12 @@ fn variant_arm_pattern_num(key: &KeyType, locale: &str) -> String {
 mod tests {
     use super::*;
     use crate::ast::{Element, KeyType, ParamType, Variant};
+    use crate::{BuiltInArgType, BuiltInFuncDef, BuiltInNamedArg};
     use std::collections::BTreeMap;
+
+    fn no_builtins() -> BTreeMap<String, BuiltInFuncDef> {
+        BTreeMap::new()
+    }
 
     #[test]
     fn detect_pure_text() {
@@ -412,10 +531,6 @@ mod tests {
     fn detect_has_select() {
         assert!(!has_select(&[Element::Text("a".into())]));
         assert!(!has_select(&[Element::VarRef("x".into())]));
-    }
-
-    fn no_builtins() -> BTreeMap<String, crate::BuiltInFuncDef> {
-        BTreeMap::new()
     }
 
     #[test]
@@ -435,7 +550,7 @@ mod tests {
         let b = no_builtins();
         assert_eq!(
             gen_fn_decl("hello", &params, true, &b),
-            "hello(&self, name: &str) -> String"
+            "hello<'a>(&self, name: impl Into<ftl_core::FluentArg<'a>>) -> String"
         );
     }
 
@@ -471,7 +586,7 @@ mod tests {
             Element::VarRef("name".into()),
             Element::Text("!".into()),
         ];
-        assert_eq!(capacity_expr(&elems, &params3), "7 + name.len() + 1");
+        assert_eq!(capacity_expr(&elems, &params3), "7 + 32 + 1");
 
         let mut params4 = BTreeMap::new();
         params4.insert("a".into(), ParamType::Str);
@@ -482,7 +597,7 @@ mod tests {
             Element::Text("yz".into()),
             Element::VarRef("b".into()),
         ];
-        assert_eq!(capacity_expr(&elems, &params4), "1 + a.len() + 2 + 32");
+        assert_eq!(capacity_expr(&elems, &params4), "1 + 32 + 2 + 32");
     }
 
     #[test]
@@ -542,9 +657,11 @@ mod tests {
             Element::Text("!".into()),
         ];
         let code = generate_one_function("hello", &elems, &params, "en", &no_builtins());
-        assert!(code.contains("pub fn hello(name: &str) -> String {"));
-        assert!(code.contains("let cap = 7 + name.len() + 1;"));
-        assert!(code.contains("s.push_str(name);"));
+        assert!(
+            code.contains("pub fn hello<'a>(name: impl Into<ftl_core::FluentArg<'a>>) -> String {")
+        );
+        assert!(code.contains("let cap = 7 + 32 + 1;"));
+        assert!(code.contains("name.into().write_localized(&mut s);"));
 
         let mut params = BTreeMap::new();
         params.insert("count".into(), ParamType::Num);
@@ -584,6 +701,169 @@ mod tests {
     }
 
     #[test]
+    fn format_builtin_arg_string() {
+        assert_eq!(
+            format_builtin_arg("hello", &BuiltInArgType::String),
+            "\"hello\".to_string()"
+        );
+    }
+
+    #[test]
+    fn format_builtin_arg_int() {
+        assert_eq!(format_builtin_arg("42", &BuiltInArgType::Int), "42i64");
+    }
+
+    #[test]
+    fn format_builtin_arg_float() {
+        assert_eq!(
+            format_builtin_arg("3.14", &BuiltInArgType::Float),
+            "3.14f64"
+        );
+    }
+
+    #[test]
+    fn format_builtin_arg_bool_true() {
+        assert_eq!(format_builtin_arg("true", &BuiltInArgType::Bool), "true");
+    }
+
+    #[test]
+    fn format_builtin_arg_bool_false() {
+        assert_eq!(format_builtin_arg("false", &BuiltInArgType::Bool), "false");
+    }
+
+    #[test]
+    fn format_builtin_arg_bool_one() {
+        assert_eq!(format_builtin_arg("1", &BuiltInArgType::Bool), "true");
+    }
+
+    #[test]
+    fn emit_num_convert_generates_into_lines() {
+        let mut params = BTreeMap::new();
+        params.insert("count".into(), ParamType::Num);
+        params.insert("name".into(), ParamType::Str);
+        let mut code = String::new();
+        emit_num_convert(&params, "    ", &mut code);
+        assert!(code.contains("let count: FluentNum = count.into();"));
+        assert!(!code.contains("name"));
+    }
+
+    #[test]
+    fn custom_builtin_call_emit_statements() {
+        let mut builtins = no_builtins();
+        builtins.insert(
+            "HTML".to_string(),
+            BuiltInFuncDef {
+                name: "HTML".to_string(),
+                ty_name: "Html".to_string(),
+                named_args: vec![
+                    BuiltInNamedArg {
+                        ftl_name: "class".to_string(),
+                        rust_name: "class".to_string(),
+                        arg_type: BuiltInArgType::String,
+                    },
+                    BuiltInNamedArg {
+                        ftl_name: "count".to_string(),
+                        rust_name: "count".to_string(),
+                        arg_type: BuiltInArgType::Int,
+                    },
+                    BuiltInNamedArg {
+                        ftl_name: "ratio".to_string(),
+                        rust_name: "ratio".to_string(),
+                        arg_type: BuiltInArgType::Float,
+                    },
+                    BuiltInNamedArg {
+                        ftl_name: "enabled".to_string(),
+                        rust_name: "enabled".to_string(),
+                        arg_type: BuiltInArgType::Bool,
+                    },
+                ],
+                write_to_body: None,
+            },
+        );
+
+        let mut params = BTreeMap::new();
+        params.insert("input".into(), ParamType::Builtin("Html".to_string()));
+
+        let elems = [Element::BuiltInCall {
+            func_name: "HTML".to_string(),
+            var_name: "input".to_string(),
+            ty_name: "Html".to_string(),
+            named_args: [
+                ("class".to_string(), "btn".to_string()),
+                ("count".to_string(), "3".to_string()),
+                ("ratio".to_string(), "1.5".to_string()),
+                ("enabled".to_string(), "true".to_string()),
+            ]
+            .into(),
+        }];
+
+        let mut code = String::new();
+        emit_push_statements(&elems, &params, "    ", &builtins, &mut code);
+        assert!(code.contains("input.class"));
+        assert!(code.contains("\"btn\".to_string()"));
+        assert!(code.contains(".count(3i64)"));
+        assert!(code.contains(".ratio(1.5f64)"));
+        assert!(code.contains(".enabled(true)"));
+        assert!(code.contains(".write_to(&mut s);"));
+    }
+
+    #[test]
+    fn datetime_builtin_call_emit_statements() {
+        let params = BTreeMap::new();
+        let builtins = no_builtins();
+
+        let elems = [Element::BuiltInCall {
+            func_name: "DATETIME".to_string(),
+            var_name: "date".to_string(),
+            ty_name: "DateTime".to_string(),
+            named_args: [
+                ("year".to_string(), "2024".to_string()),
+                ("month".to_string(), "5".to_string()),
+                ("day".to_string(), "15".to_string()),
+                ("hour12".to_string(), "true".to_string()),
+                ("timeZone".to_string(), "UTC".to_string()),
+            ]
+            .into(),
+        }];
+
+        let mut code = String::new();
+        emit_push_statements(&elems, &params, "    ", &builtins, &mut code);
+        assert!(code.contains("ftl_core::datetime::format"));
+        assert!(code.contains("Some(2024i64)")); // year
+        assert!(code.contains("Some(5i64)")); // month
+        assert!(code.contains("Some(15i64)")); // day
+        assert!(code.contains("Some(true)")); // hour12
+        assert!(code.contains("Some(\"UTC\")")); // timeZone
+        assert!(code.contains("None")); // unset optional args
+    }
+
+    #[test]
+    fn variant_arm_pattern_num_all_cases() {
+        assert_eq!(
+            variant_arm_pattern_num(&KeyType::Num("7".into()), "en"),
+            "7.0"
+        );
+        assert_eq!(
+            variant_arm_pattern_num(&KeyType::Ident("zero".into()), "en"),
+            "0.0"
+        );
+        assert_eq!(
+            variant_arm_pattern_num(&KeyType::Ident("one".into()), "en"),
+            "1.0"
+        );
+        assert_eq!(
+            variant_arm_pattern_num(&KeyType::Ident("two".into()), "en"),
+            "2.0"
+        );
+        assert_eq!(
+            variant_arm_pattern_num(&KeyType::Ident("few".into()), "en"),
+            "false"
+        );
+        let pat = variant_arm_pattern_num(&KeyType::Ident("one".into()), "ru");
+        assert!(pat.contains("(n.trunc() as i64) % 10 == 1"));
+    }
+
+    #[test]
     fn generate_string_selector() {
         let mut params = BTreeMap::new();
         params.insert("gender".into(), ParamType::Str);
@@ -603,7 +883,7 @@ mod tests {
             ],
         }];
         let code = generate_one_function("greet", &elems, &params, "en", &no_builtins());
-        assert!(code.contains("match gender"));
+        assert!(code.contains("match __sel.as_str()"));
         assert!(code.contains("\"male\" => \"sir\".to_string()"));
         assert!(code.contains("_ => \"other\".to_string()"));
     }

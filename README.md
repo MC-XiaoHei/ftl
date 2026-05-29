@@ -15,19 +15,18 @@ Test Environment: AMD AI 9 H 365, `cargo bench -p example`.
 
 - pure text: < 5ns
 - translate with placeholder: < 50ns
-- translate with NUMBER(): < 1us
-- translate with DATETIME(): < 5us
+- translate with builtin NUMBER() func: < 1us
+- translate with builtin DATETIME() func: < 5us
+- translate with custom builtin func: < 100ns
 
 ## Limitations
 
-- No context-based type inference: variables are not automatically inferred as `FluentDateTime`/`FluentNumber` — you must call `DATETIME()`/`NUMBER()` with explicit named args
 - Function calls as selectors are unsupported
-- The same free variable cannot be inferred as both string-like and numeric-like across all uses
-- Non-primary locales must be structural subsets of the primary locale (messages, terms, and their attributes)
-- Missing entries in secondary locales are resolved against the primary locale at code generation time; runtime fallback chains are not supported
+- The same variable cannot be used as both a string and a numeric selector
+- Non-primary locales must be structural subsets of the primary locale (messages, terms, and attributes)
+- Runtime fallback chains are not supported; missing entries in secondary locales are resolved from the primary locale at code generation time
 
-A full walkthrough of supported FTL syntax is available in the example locale
-files.
+See the example locale files for a full walkthrough of supported FTL syntax:
 
 - [`locales/en-US.ftl`](example/locales/en-US.ftl)
 - [`locales/zh-CN.ftl`](example/locales/zh-CN.ftl)
@@ -40,7 +39,7 @@ files.
 ftl-codegen = "0.1"
 
 [dependencies]
-unic-langid = { version = "0.9", features = ["unic-langid-macros"] }
+ftl-core = "0.1"
 ```
 
 ```rust
@@ -73,24 +72,9 @@ fn main() {
 }
 ```
 
-## Features
+## Custom Built-in Functions
 
-### `builtin` feature (enabled by default)
-
-When enabled, `NUMBER()` and `DATETIME()` built-in functions are automatically registered with locale-aware formatting backed by CLDR data.
-
-```toml
-[build-dependencies]
-ftl-codegen = { version = "0.1", features = ["builtin"] }
-
-[dependencies]
-ftl-builtin = { version = "0.1" }
-unic-langid = { version = "0.9", features = ["unic-langid-macros"] }
-```
-
-## Custom built-in functions
-
-Register your own via `ftl_builtin!` macro and `.register()`:
+Register custom built-in functions via the `ftl_builtin!` macro and `.register()`:
 
 ```rust
 // build.rs
@@ -126,7 +110,7 @@ Use in FTL:
 result = { TEST($value, operator: "+", operand: 10) }
 ```
 
-The `impl |this, out, lang|` block receives `this` (the built-in struct with `value` and named args), an output `String`, and the `Lang` enum for locale. Omit `lang` if the function doesn't need locale.
+The `impl |this, out, lang|` block receives `this` (a struct with `value` and named args), an output `String`, and the `Lang` enum. Omit `lang` if the function doesn't need locale.
 
 Custom built-ins **do not** require the `builtin` feature.
 
@@ -151,17 +135,16 @@ hello = Hello, { $name }!
 
 ```rust
 #[inline]
-pub fn hello(name: &str) -> String {
-    let cap = 7 + name.len() + 1;
-    let mut s = String::with_capacity(cap);
+pub fn hello<'a>(name: impl Into<ftl_core::FluentArg<'a>>) -> String {
+    let mut s = String::with_capacity(7 + 32 + 1);
     s.push_str("Hello, ");
-    s.push_str(name);
+    name.into().write_localized(&mut s);
     s.push_str("!");
     s
 }
 ```
 
-**Built-in function call -> `write_to` on builtin type**
+**Built-in function call -> `ftl_core::number::format`**
 
 ```fluent
 item-count = You have { NUMBER($count) } items.
@@ -169,10 +152,11 @@ item-count = You have { NUMBER($count) } items.
 
 ```rust
 #[inline]
-pub fn item_count(count: impl Into<Number>) -> String {
+pub fn item_count(count: impl Into<FluentNum>) -> String {
+    let count: FluentNum = count.into();
     let mut s = String::with_capacity(9 + 32 + 7);
     s.push_str("You have ");
-    count.into().write_to(&mut s);
+    ftl_core::number::format(*count, None, None, None, None, None, None, None, None, None, &mut s, &ftl_core::locale());
     s.push_str(" items.");
     s
 }
@@ -298,7 +282,7 @@ save =
 
 ```rust
 #[inline]
-pub fn save__label() -> &'static str { "Save Zed" }
+pub fn save__label() -> &'static str { "Save File" }
 
 #[inline]
 pub fn save__tooltip(target: &str) -> String {

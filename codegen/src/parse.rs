@@ -6,7 +6,6 @@ use std::str::FromStr;
 
 use fluent_syntax::ast::{self, Entry, Expression, InlineExpression, PatternElement, VariantKey};
 use fluent_syntax::parser::{self, ParserError};
-use indoc::formatdoc;
 
 use crate::ast::*;
 use crate::diag::{report_diagnostics, Diag, DiagKind};
@@ -30,7 +29,9 @@ enum VisitState {
 }
 
 struct Resolver<'a> {
+    #[allow(dead_code)]
     locale: &'a str,
+    #[allow(dead_code)]
     file: &'a str,
     entries: &'a LocaleEntries,
     messages: BTreeMap<String, Message>,
@@ -44,10 +45,27 @@ struct Resolver<'a> {
 }
 
 impl Generator {
-    /// Load locale files without any registered built-in functions.
+    /// Load locale files (NUMBER and DATETIME are auto-registered).
     pub fn load_simple(dir: &Path, primary: &str, module_path: &str) -> Self {
-        let empty = BTreeMap::new();
-        Self::load(dir, primary, module_path, &empty)
+        let mut builtins = BTreeMap::new();
+        // Always auto-register NUMBER and DATETIME.
+        builtins
+            .entry("NUMBER".to_string())
+            .or_insert_with(|| BuiltInFuncDef {
+                name: "NUMBER".to_string(),
+                ty_name: "Number".to_string(),
+                named_args: Vec::new(),
+                write_to_body: None,
+            });
+        builtins
+            .entry("DATETIME".to_string())
+            .or_insert_with(|| BuiltInFuncDef {
+                name: "DATETIME".to_string(),
+                ty_name: "DateTime".to_string(),
+                named_args: Vec::new(),
+                write_to_body: None,
+            });
+        Self::load(dir, primary, module_path, &builtins)
     }
 
     pub fn load(
@@ -300,7 +318,8 @@ impl Generator {
         writeln!(out, "// Primary language: {}", self.primary).unwrap();
         writeln!(out, "#[allow(non_upper_case_globals, unused, dead_code)]").unwrap();
         writeln!(out).unwrap();
-        self.emit_fluent_num(&mut out);
+        writeln!(out, "use ftl_core::FluentNum;").unwrap();
+        writeln!(out).unwrap();
         self.emit_builtin_types(&mut out);
         for locale in &locales {
             self.emit_module(locale, &mut out);
@@ -352,11 +371,11 @@ impl Generator {
         writeln!(out, "pub mod {} {{", mod_name).unwrap();
         writeln!(
             out,
-            "    #![allow(non_snake_case, unused_imports, dead_code)]"
+            "    #![allow(non_snake_case, unused_imports, dead_code, unused_variables)]"
         )
         .unwrap();
         writeln!(out, "    use std::fmt::Write;").unwrap();
-        writeln!(out, "    use super::FluentNum;").unwrap();
+        writeln!(out, "    use ftl_core::{{FluentNum, FluentArg}};").unwrap();
         for def in self.builtins.values() {
             if def.write_to_body.is_some() {
                 writeln!(out, "    use super::{};", def.ty_name).unwrap();
@@ -456,110 +475,6 @@ impl Generator {
         writeln!(out).unwrap();
     }
 
-    fn emit_fluent_num(&self, out: &mut String) {
-        writeln!(out, "pub struct FluentNum(f64);").unwrap();
-        writeln!(out).unwrap();
-        let from_types: [(&str, &str); 12] = [
-            ("usize", "v as f64"),
-            ("u64", "v as f64"),
-            ("u32", "v as f64"),
-            ("u16", "v as f64"),
-            ("u8", "v as f64"),
-            ("i64", "v as f64"),
-            ("i32", "v as f64"),
-            ("i16", "v as f64"),
-            ("i8", "v as f64"),
-            ("isize", "v as f64"),
-            ("f64", "v"),
-            ("f32", "v as f64"),
-        ];
-        for (ty, conv) in &from_types {
-            writeln!(
-                out,
-                "impl From<{ty}> for FluentNum {{ fn from(v: {ty}) -> Self {{ Self({conv}) }} }}"
-            )
-            .unwrap();
-        }
-        writeln!(out).unwrap();
-        writeln!(
-            out,
-            "{}",
-            formatdoc!(
-                "
-                impl PartialEq<f64> for FluentNum {{
-                    fn eq(&self, other: &f64) -> bool {{
-                        self.0 == *other
-                    }}
-                }}
-            "
-            )
-        )
-        .unwrap();
-        writeln!(out).unwrap();
-        writeln!(
-            out,
-            "{}",
-            formatdoc!(
-                "
-                impl std::ops::Deref for FluentNum {{
-                    type Target = f64;
-                    fn deref(&self) -> &f64 {{ &self.0 }}
-                }}
-            "
-            )
-        )
-        .unwrap();
-        writeln!(out).unwrap();
-        writeln!(
-            out,
-            "{}",
-            formatdoc!(
-                "
-                impl FluentNum {{
-                    pub fn operands(self) -> Operands {{
-                        let i = self.0.trunc() as u64;
-                        Operands {{ n: self.0, i, v: 0, w: 0, f: 0, t: 0 }}
-                    }}
-                }}
-            "
-            )
-        )
-        .unwrap();
-        writeln!(out).unwrap();
-        writeln!(
-            out,
-            "{}",
-            formatdoc!(
-                "
-                pub struct Operands {{
-                    pub n: f64,
-                    pub i: u64,
-                    pub v: u8,
-                    pub w: u8,
-                    pub f: u64,
-                    pub t: u64,
-                }}
-            "
-            )
-        )
-        .unwrap();
-        writeln!(out).unwrap();
-        writeln!(
-            out,
-            "{}",
-            formatdoc!(
-                "
-                impl core::fmt::Display for FluentNum {{
-                    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {{
-                        write!(f, \"{{}}\", self.0)
-                    }}
-                }}
-            "
-            )
-        )
-        .unwrap();
-    }
-
     fn emit_builtin_types(&self, out: &mut String) {
         use std::fmt::Write;
         for def in self.builtins.values() {
@@ -622,24 +537,14 @@ impl Generator {
             writeln!(out, "        {}", body).unwrap();
             writeln!(out, "    }}").unwrap();
             writeln!(out, "}}").unwrap();
-            writeln!(out).unwrap();
-            writeln!(
-                out,
-                "impl<T: Into<FluentNum>> From<T> for {} {{",
-                def.ty_name
-            )
-            .unwrap();
-            writeln!(out, "    fn from(v: T) -> Self {{").unwrap();
-            writeln!(out, "        Self::new(v)").unwrap();
-            writeln!(out, "    }}").unwrap();
-            writeln!(out, "}}").unwrap();
         }
     }
 
     fn emit_runtime(&self, locales: &[&String], out: &mut String) {
         writeln!(out, "use std::sync::atomic::{{AtomicU8, Ordering}};").unwrap();
         writeln!(out).unwrap();
-        writeln!(out, "use unic_langid::{{LanguageIdentifier, langid}};").unwrap();
+        writeln!(out, "use ftl_core::unic_langid::LanguageIdentifier;").unwrap();
+        writeln!(out, "use std::str::FromStr;").unwrap();
         writeln!(out).unwrap();
         writeln!(out, "static LOCALE_ID: AtomicU8 = AtomicU8::new(0);").unwrap();
         writeln!(out).unwrap();
@@ -661,7 +566,7 @@ impl Generator {
         for locale in locales {
             writeln!(
                 out,
-                "            Lang::{} => langid!(\"{}\"),",
+                "            Lang::{} => LanguageIdentifier::from_str(\"{}\").expect(\"valid locale\"),",
                 sanitize_upper(locale),
                 locale
             )
@@ -687,6 +592,8 @@ impl Generator {
         }
         writeln!(out, "    }};").unwrap();
         writeln!(out, "    LOCALE_ID.store(id, Ordering::Release);").unwrap();
+        writeln!(out, "    let lid: LanguageIdentifier = lang.into();").unwrap();
+        writeln!(out, "    ftl_core::set_locale(&lid);").unwrap();
         writeln!(out, "}}").unwrap();
     }
 }
@@ -707,239 +614,179 @@ impl<'a> Resolver<'a> {
             env_stack: Vec::new(),
         }
     }
+
     fn resolve_all_messages(&mut self) -> BTreeMap<String, Message> {
-        let names: Vec<String> = self.entries.messages.keys().cloned().collect();
-        for name in names {
-            self.resolve_message(&name);
+        let keys: Vec<String> = self.entries.messages.keys().cloned().collect();
+        for key in keys {
+            self.resolve_message(&key);
         }
         self.messages.clone()
     }
+
     fn resolve_all_terms(&mut self) -> BTreeMap<String, Term> {
-        let names: Vec<String> = self.entries.terms.keys().cloned().collect();
-        for name in names {
-            self.resolve_term(&name);
+        let keys: Vec<String> = self.entries.terms.keys().cloned().collect();
+        for key in keys {
+            self.resolve_term(&key);
         }
         self.terms.clone()
     }
+
     fn resolve_all_attributes(&mut self) -> BTreeMap<String, Attribute> {
-        let names: Vec<String> = self.entries.attributes.keys().cloned().collect();
-        for name in names {
-            self.resolve_attribute(&name);
+        let keys: Vec<String> = self.entries.attributes.keys().cloned().collect();
+        for key in keys {
+            self.resolve_attribute(&key);
         }
         self.attributes.clone()
     }
-    fn resolve_message(&mut self, name: &str) -> Message {
-        if let Some(msg) = self.messages.get(name) {
-            return msg.clone();
-        }
+
+    fn resolve_message(&mut self, name: &str) {
         match self.message_states.get(name).copied() {
-            Some(VisitState::Visiting) => self.cycle_panic(RefKind::Message, name),
-            Some(VisitState::Done) => {
-                return self
-                    .messages
-                    .get(name)
-                    .expect("resolved message missing from cache")
-                    .clone()
+            Some(VisitState::Visiting) => {
+                self.cycle_panic(RefKind::Message, name);
             }
+            Some(VisitState::Done) => return,
             None => {}
         }
-        let raw = self
-            .entries
-            .messages
-            .get(name)
-            .unwrap_or_else(|| {
-                panic!(
-                    "{}: [{}] undefined message reference '{}'",
-                    self.file, self.locale, name
-                )
-            })
-            .clone();
         self.message_states
             .insert(name.to_string(), VisitState::Visiting);
         self.stack.push((RefKind::Message, name.to_string()));
-        let elements = self.resolve_elements(&raw.elements);
+        let entry = self
+            .entries
+            .messages
+            .get(name)
+            .unwrap_or_else(|| panic!("undefined message reference: '{}'", name));
+        let resolved = self.resolve_elements(&entry.elements);
         self.stack.pop();
         self.message_states
             .insert(name.to_string(), VisitState::Done);
-        let resolved = Message {
-            name: raw.name,
-            elements: fold_text(elements),
-        };
-        self.messages.insert(name.to_string(), resolved.clone());
-        resolved
+        self.messages.insert(
+            name.to_string(),
+            Message {
+                name: name.to_string(),
+                elements: resolved,
+            },
+        );
     }
-    fn resolve_term(&mut self, name: &str) -> Term {
-        if let Some(term) = self.terms.get(name) {
-            return term.clone();
-        }
+
+    fn resolve_term(&mut self, name: &str) {
         match self.term_states.get(name).copied() {
-            Some(VisitState::Visiting) => self.cycle_panic(RefKind::Term, name),
-            Some(VisitState::Done) => {
-                return self
-                    .terms
-                    .get(name)
-                    .expect("resolved term missing from cache")
-                    .clone()
+            Some(VisitState::Visiting) => {
+                self.cycle_panic(RefKind::Term, name);
             }
+            Some(VisitState::Done) => return,
             None => {}
         }
-        let raw = self
-            .entries
-            .terms
-            .get(name)
-            .unwrap_or_else(|| {
-                panic!(
-                    "{}: [{}] undefined term reference '-{}'",
-                    self.file, self.locale, name
-                )
-            })
-            .clone();
         self.term_states
             .insert(name.to_string(), VisitState::Visiting);
         self.stack.push((RefKind::Term, name.to_string()));
-        let elements = self.resolve_elements(&raw.elements);
+        let entry = self
+            .entries
+            .terms
+            .get(name)
+            .unwrap_or_else(|| panic!("undefined term reference: '-{}'", name));
+        let resolved = self.resolve_elements(&entry.elements);
         self.stack.pop();
         self.term_states.insert(name.to_string(), VisitState::Done);
-        let resolved = Term {
-            name: raw.name,
-            elements: fold_text(elements),
-        };
-        self.terms.insert(name.to_string(), resolved.clone());
-        resolved
+        self.terms.insert(
+            name.to_string(),
+            Term {
+                name: name.to_string(),
+                elements: resolved,
+            },
+        );
     }
-    fn resolve_attribute(&mut self, name: &str) -> Attribute {
-        if let Some(attr) = self.attributes.get(name) {
-            return attr.clone();
-        }
-        match self.attribute_states.get(name).copied() {
-            Some(VisitState::Visiting) => self.cycle_panic(RefKind::Attribute, name),
-            Some(VisitState::Done) => {
-                return self
-                    .attributes
-                    .get(name)
-                    .expect("resolved attribute missing from cache")
-                    .clone()
+
+    fn resolve_attribute(&mut self, flat_name: &str) {
+        match self.attribute_states.get(flat_name).copied() {
+            Some(VisitState::Visiting) => {
+                // Extract owner from flat name (before `__`)
+                let owner = flat_name.split("__").next().unwrap_or(flat_name);
+                self.cycle_panic(RefKind::Attribute, owner);
             }
+            Some(VisitState::Done) => return,
             None => {}
         }
-        let raw = self
+        self.attribute_states
+            .insert(flat_name.to_string(), VisitState::Visiting);
+        let entry = self
             .entries
             .attributes
-            .get(name)
-            .unwrap_or_else(|| {
-                panic!(
-                    "{}: [{}] undefined attribute reference '.{}'",
-                    self.file, self.locale, name
-                )
-            })
-            .clone();
+            .get(flat_name)
+            .unwrap_or_else(|| panic!("undefined attribute reference: '{}'", flat_name));
+        let resolved = self.resolve_elements(&entry.elements);
         self.attribute_states
-            .insert(name.to_string(), VisitState::Visiting);
-        self.stack.push((RefKind::Attribute, name.to_string()));
-        let elements = self.resolve_elements(&raw.elements);
-        self.stack.pop();
-        self.attribute_states
-            .insert(name.to_string(), VisitState::Done);
-        let resolved = Attribute {
-            owner: raw.owner,
-            name: raw.name,
-            elements: fold_text(elements),
-        };
-        self.attributes.insert(name.to_string(), resolved.clone());
-        resolved
+            .insert(flat_name.to_string(), VisitState::Done);
+        self.attributes.insert(
+            flat_name.to_string(),
+            Attribute {
+                owner: entry.owner.clone(),
+                name: entry.name.clone(),
+                elements: resolved,
+            },
+        );
     }
+
     fn resolve_elements(&mut self, elements: &[Element]) -> Vec<Element> {
         let mut out = Vec::new();
-        for element in elements {
-            match element {
-                Element::Text(text) => out.push(Element::Text(text.clone())),
+        for e in elements {
+            match e {
+                Element::Text(_) | Element::BuiltInCall { .. } => {
+                    out.push(e.clone());
+                }
                 Element::VarRef(name) => {
-                    if let Some(bound) = self.lookup_bound_var(name) {
+                    let bound = self.env_stack.last().and_then(|env| env.get(name).cloned());
+                    if let Some(bound) = bound {
                         out.push(bound);
                     } else {
                         out.push(Element::VarRef(name.clone()));
                     }
                 }
-                Element::MessageRef(name) => {
-                    let r = self.resolve_message(name);
-                    out.extend(r.elements.clone());
-                }
-                Element::AttributeRef { owner, name } => {
-                    let flat = flatten_attr_name(owner, name);
-                    let r = self.resolve_attribute(&flat);
-                    out.extend(r.elements.clone());
-                }
-                Element::TermRef {
-                    name,
-                    args,
-                    positional,
-                    ..
-                } => {
-                    // Free variables from term, in source order
-                    let raw_term = self
-                        .entries
-                        .terms
-                        .get(name.as_str())
-                        .expect("undefined term reference");
-                    let free_vars: Vec<&str> = raw_term
-                        .elements
-                        .iter()
-                        .filter_map(|e| {
-                            if let Element::VarRef(v) = e {
-                                // Already bound in env_stack
-                                if self.lookup_bound_var(v).is_none() {
-                                    Some(v.as_str())
-                                } else {
-                                    None
-                                }
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-
-                    let mut bindings = BTreeMap::new();
-                    // Map positional args to free vars in order
-                    for (i, pos_val) in positional.iter().enumerate() {
-                        if let Some(var_name) = free_vars.get(i) {
-                            bindings.insert(
-                                (*var_name).to_string(),
-                                self.resolve_argument_value(pos_val),
-                            );
-                        }
-                    }
-                    // Named args override positional
-                    for (k, v) in args {
-                        bindings.insert(k.clone(), self.resolve_argument_value(v));
-                    }
-                    let r = self.resolve_term_with_args(name, bindings);
-                    out.extend(r.elements.clone());
-                }
                 Element::Select { selector, variants } => {
-                    let vs = variants
+                    let resolved_variants: Vec<Variant> = variants
                         .iter()
                         .map(|v| Variant {
                             key: v.key.clone(),
-                            elements: fold_text(self.resolve_elements(&v.elements)),
+                            elements: self.resolve_elements(&v.elements),
                             default: v.default,
                         })
                         .collect();
                     out.push(Element::Select {
                         selector: selector.clone(),
-                        variants: vs,
+                        variants: resolved_variants,
                     });
                 }
-                Element::BuiltInCall { .. } => {
-                    out.push(element.clone());
+                Element::MessageRef(name) => {
+                    self.resolve_message(name);
+                    let m = self.messages.get(name).unwrap();
+                    out.extend(m.elements.clone());
+                }
+                Element::TermRef {
+                    name,
+                    attribute,
+                    args,
+                    positional,
+                } => {
+                    let resolved = self.resolve_term_with_args(name, attribute, args, positional);
+                    out.extend(resolved);
+                }
+                Element::AttributeRef { owner, name } => {
+                    self.resolve_attribute(&flatten_attr_name(owner, name));
+                    let flat_name = flatten_attr_name(owner, name);
+                    let a = self.attributes.get(&flat_name).unwrap();
+                    out.extend(a.elements.clone());
                 }
                 Element::TermAttrSelect {
                     term,
                     attr,
                     variants,
                 } => {
-                    let flat = flatten_attr_name(term, attr);
-                    let r = self.resolve_attribute(&flat);
-                    let attr_value: String = r
+                    // Resolve the term attribute's value at build time
+                    let flat_name = flatten_attr_name(term, attr);
+                    self.resolve_attribute(&flat_name);
+                    let attr_entry = self.attributes.get(&flat_name).unwrap();
+                    // The attribute value should be a single literal string
+                    // Inline the attribute value as the selector
+                    let attr_text: String = attr_entry
                         .elements
                         .iter()
                         .filter_map(|e| {
@@ -951,113 +798,108 @@ impl<'a> Resolver<'a> {
                         })
                         .collect();
                     let matched = variants.iter().find(|v| match &v.key {
-                        KeyType::Ident(ident) => ident == &attr_value,
-                        KeyType::Num(num) => num == &attr_value,
+                        KeyType::Ident(ident) => ident == &attr_text,
+                        KeyType::Num(val) => val == &attr_text,
                     });
                     if let Some(variant) = matched {
                         out.extend(self.resolve_elements(&variant.elements));
-                    } else if let Some(default) = variants.iter().find(|v| v.default) {
-                        out.extend(self.resolve_elements(&default.elements));
+                    } else if let Some(variant) = variants.iter().find(|v| v.default) {
+                        out.extend(self.resolve_elements(&variant.elements));
                     }
                 }
             }
         }
         fold_text(out)
     }
-    fn resolve_term_with_args(&mut self, name: &str, args: BTreeMap<String, Element>) -> Term {
-        self.env_stack.push(args);
-        let r = self.resolve_term(name);
-        self.env_stack.pop();
-        r
-    }
-    fn resolve_argument_value(&mut self, value: &Element) -> Element {
-        match value {
-            Element::Text(text) => Element::Text(text.clone()),
-            Element::VarRef(name) => self
-                .lookup_bound_var(name)
-                .unwrap_or_else(|| Element::VarRef(name.clone())),
-            Element::MessageRef(name) => {
-                let r = self.resolve_message(name);
-                if r.elements.len() == 1 {
-                    r.elements[0].clone()
-                } else {
-                    panic!(
-                        "{}: [{}] term argument '{}' must resolve to a single element",
-                        self.file, self.locale, name
-                    );
-                }
-            }
-            Element::AttributeRef { owner, name } => {
-                let flat = flatten_attr_name(owner, name);
-                let r = self.resolve_attribute(&flat);
-                if r.elements.len() == 1 {
-                    r.elements[0].clone()
-                } else {
-                    panic!(
-                        "{}: [{}] term argument '{}.{}' must resolve to a single element",
-                        self.file, self.locale, owner, name
-                    );
-                }
-            }
-            Element::TermRef { name, args, .. } => {
-                let bindings = args
-                    .iter()
-                    .map(|(k, v)| (k.clone(), self.resolve_argument_value(v)))
-                    .collect::<BTreeMap<_, _>>();
-                let r = self.resolve_term_with_args(name, bindings);
-                if r.elements.len() == 1 {
-                    r.elements[0].clone()
-                } else {
-                    panic!(
-                        "{}: [{}] parameterized term '-{}' must resolve to a single element",
-                        self.file, self.locale, name
-                    );
-                }
-            }
-            Element::Select { .. } | Element::TermAttrSelect { .. } => {
-                panic!("Term argument cannot be a select expression")
-            }
-            Element::BuiltInCall { .. } => {
-                panic!("Built-in call cannot be used as a term argument")
+
+    fn resolve_term_with_args(
+        &mut self,
+        name: &str,
+        attribute: &Option<String>,
+        args: &BTreeMap<String, Element>,
+        positional: &[Element],
+    ) -> Vec<Element> {
+        self.resolve_term(name);
+        let term_elements = self
+            .terms
+            .get(name)
+            .map(|t| t.elements.clone())
+            .unwrap_or_default();
+        let term_name = self
+            .terms
+            .get(name)
+            .map(|t| t.name.clone())
+            .unwrap_or_default();
+
+        // Build the binding environment (arg name → element)
+        let mut env = BTreeMap::new();
+        let term_params =
+            collect_params_with_context(&term_elements, &format!("term '-{}'", term_name));
+        // Map positional args to parameter names (in order of param discovery)
+        let term_param_names: Vec<&String> = term_params.keys().collect();
+        for (i, pos) in positional.iter().enumerate() {
+            if let Some(pname) = term_param_names.get(i) {
+                env.insert((*pname).clone(), pos.clone());
             }
         }
+        for (k, v) in args {
+            env.insert(k.clone(), v.clone());
+        }
+
+        // Resolve the term elements with this environment
+        self.env_stack.push(env);
+        let resolved = self.resolve_elements(&term_elements);
+        self.env_stack.pop();
+
+        // If an attribute is specified, extract just that attribute
+        if let Some(attr_name) = attribute {
+            let flat_name = flatten_attr_name(name, attr_name);
+            self.resolve_attribute(&flat_name);
+            let attr_elements = self.attributes.get(&flat_name).map(|a| a.elements.clone());
+            if let Some(ae) = attr_elements {
+                // Resolve attribute elements too (variables may be forwarded)
+                self.env_stack.push(BTreeMap::new()); // empty env for attribute
+                let attr_resolved = self.resolve_elements(&ae);
+                self.env_stack.pop();
+                return attr_resolved;
+            }
+        }
+
+        resolved
     }
-    fn lookup_bound_var(&self, name: &str) -> Option<Element> {
-        self.env_stack
-            .iter()
-            .rev()
-            .find_map(|scope| scope.get(name).cloned())
-    }
-    fn cycle_panic(&self, ref_kind: RefKind, name: &str) -> ! {
-        let mut chain = self
-            .stack
-            .iter()
-            .map(|(k, e)| format!("{}{}", ref_prefix(*k), e))
-            .collect::<Vec<_>>();
-        chain.push(format!("{}{}", ref_prefix(ref_kind), name));
-        panic!(
-            "{}: [{}] cyclic {} reference: {}",
-            self.file,
-            self.locale,
-            match ref_kind {
+
+    fn cycle_panic(&self, kind: RefKind, name: &str) {
+        let prefix = ref_prefix(kind);
+        let mut msg = format!(
+            "cyclic {} reference: {}{}",
+            match kind {
                 RefKind::Message => "message",
                 RefKind::Term => "term",
                 RefKind::Attribute => "attribute",
             },
-            chain.join(" -> ")
+            prefix,
+            name
         );
+        msg.push_str("\n  resolution stack:");
+        for (k, n) in &self.stack {
+            let p = ref_prefix(*k);
+            msg.push_str(&format!("\n    - {}{}", p, n));
+        }
+        panic!("{}", msg);
     }
 }
 
-fn fold_text(elements: Vec<Element>) -> Vec<Element> {
+fn fold_text(elems: Vec<Element>) -> Vec<Element> {
     let mut out = Vec::new();
-    for element in elements {
-        match element {
-            Element::Text(text) => {
-                if let Some(Element::Text(last)) = out.last_mut() {
-                    last.push_str(&text);
-                } else if !text.is_empty() {
-                    out.push(Element::Text(text));
+    for e in elems {
+        match e {
+            Element::Text(s) => {
+                if s.is_empty() {
+                    continue;
+                }
+                match out.last_mut() {
+                    Some(Element::Text(last)) => last.push_str(&s),
+                    _ => out.push(Element::Text(s)),
                 }
             }
             other => out.push(other),
@@ -1073,6 +915,7 @@ fn ref_prefix(kind: RefKind) -> &'static str {
         RefKind::Attribute => ".",
     }
 }
+
 fn flatten_attr_name(owner: &str, name: &str) -> String {
     format!("{}__{}", owner, name)
 }
@@ -1083,6 +926,7 @@ fn convert_elements(
 ) -> Vec<Element> {
     elems.iter().map(|e| convert_element(e, builtins)).collect()
 }
+
 fn convert_element(
     e: &PatternElement<&str>,
     builtins: &BTreeMap<String, BuiltInFuncDef>,
@@ -1186,7 +1030,7 @@ fn convert_expression(
                 }
                 Element::BuiltInCall {
                     func_name,
-                    ty_name: def.ty_name.to_string(),
+                    ty_name: def.ty_name.clone(),
                     var_name: base,
                     named_args,
                 }
@@ -1371,6 +1215,7 @@ fn format_parse_error(source: &str, file: &str, locale: &str, error: &ParserErro
 #[cfg_attr(coverage, coverage(off))]
 mod tests {
     use super::*;
+    use crate::{BuiltInArgType, BuiltInNamedArg};
 
     #[test]
     fn fold_text_merges_adjacent_text() {
@@ -1474,6 +1319,325 @@ mod tests {
         let diag = format_parse_error(source, "f.ftl", "en", &err);
         assert!(diag.message.contains("help:"));
         assert!(diag.message.contains("hash"));
+    }
+
+    #[test]
+    fn convert_element_text() {
+        let pe = PatternElement::TextElement { value: "hello" };
+        let result = convert_element(&pe, &BTreeMap::new());
+        assert_eq!(result, Element::Text("hello".to_string()));
+    }
+
+    #[test]
+    fn convert_expression_variable_ref() {
+        let expr = Expression::Inline(InlineExpression::VariableReference {
+            id: ast::Identifier { name: "name" },
+        });
+        let result = convert_expression(&expr, &BTreeMap::new());
+        assert_eq!(result, Element::VarRef("name".to_string()));
+    }
+
+    #[test]
+    fn convert_expression_message_ref() {
+        let expr = Expression::Inline(InlineExpression::MessageReference {
+            id: ast::Identifier { name: "greeting" },
+            attribute: None,
+        });
+        let result = convert_expression(&expr, &BTreeMap::new());
+        assert_eq!(result, Element::MessageRef("greeting".to_string()));
+    }
+
+    #[test]
+    fn convert_expression_message_ref_with_attr() {
+        let expr = Expression::Inline(InlineExpression::MessageReference {
+            id: ast::Identifier { name: "save" },
+            attribute: Some(ast::Identifier { name: "label" }),
+        });
+        let result = convert_expression(&expr, &BTreeMap::new());
+        assert_eq!(
+            result,
+            Element::AttributeRef {
+                owner: "save".to_string(),
+                name: "label".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn convert_expression_string_literal() {
+        let expr = Expression::Inline(InlineExpression::StringLiteral { value: "hello" });
+        let result = convert_expression(&expr, &BTreeMap::new());
+        assert_eq!(result, Element::Text("hello".to_string()));
+    }
+
+    #[test]
+    fn convert_expression_number_literal() {
+        let expr = Expression::Inline(InlineExpression::NumberLiteral { value: "42" });
+        let result = convert_expression(&expr, &BTreeMap::new());
+        assert_eq!(result, Element::Text("42".to_string()));
+    }
+
+    #[test]
+    fn convert_expression_function_ref() {
+        let mut builtins = BTreeMap::new();
+        builtins.insert(
+            "HTML".to_string(),
+            BuiltInFuncDef {
+                name: "HTML".to_string(),
+                ty_name: "Html".to_string(),
+                named_args: vec![BuiltInNamedArg {
+                    ftl_name: "class".to_string(),
+                    rust_name: "class".to_string(),
+                    arg_type: BuiltInArgType::String,
+                }],
+                write_to_body: None,
+            },
+        );
+
+        let expr = Expression::Inline(InlineExpression::FunctionReference {
+            id: ast::Identifier { name: "HTML" },
+            arguments: ast::CallArguments {
+                positional: vec![InlineExpression::VariableReference {
+                    id: ast::Identifier { name: "input" },
+                }],
+                named: vec![ast::NamedArgument {
+                    name: ast::Identifier { name: "class" },
+                    value: InlineExpression::StringLiteral { value: "btn" },
+                }],
+            },
+        });
+        let result = convert_expression(&expr, &builtins);
+        assert!(matches!(result, Element::BuiltInCall { .. }));
+        if let Element::BuiltInCall {
+            func_name,
+            var_name,
+            named_args,
+            ..
+        } = result
+        {
+            assert_eq!(func_name, "HTML");
+            assert_eq!(var_name, "input");
+            assert_eq!(named_args.get("class").map(|s| s.as_str()), Some("btn"));
+        }
+    }
+
+    #[test]
+    fn convert_collected_empty() {
+        let result = convert_collected(vec![]);
+        assert_eq!(result, Element::Text(String::new()));
+    }
+
+    #[test]
+    fn convert_collected_single() {
+        let result = convert_collected(vec![Element::VarRef("x".to_string())]);
+        assert_eq!(result, Element::VarRef("x".to_string()));
+    }
+
+    #[test]
+    fn convert_expression_number_literal_selector_matches() {
+        use ast::VariantKey;
+        let expr = Expression::Select {
+            selector: ast::InlineExpression::NumberLiteral { value: "42" },
+            variants: vec![
+                ast::Variant {
+                    key: VariantKey::NumberLiteral { value: "42" },
+                    value: ast::Pattern {
+                        elements: vec![PatternElement::TextElement { value: "meaning" }],
+                    },
+                    default: false,
+                },
+                ast::Variant {
+                    key: VariantKey::Identifier { name: "other" },
+                    value: ast::Pattern {
+                        elements: vec![PatternElement::TextElement { value: "unknown" }],
+                    },
+                    default: true,
+                },
+            ],
+        };
+        let result = convert_expression(&expr, &BTreeMap::new());
+        assert_eq!(result, Element::Text("meaning".to_string()));
+    }
+
+    #[test]
+    fn convert_expression_number_literal_selector_uses_default() {
+        use ast::VariantKey;
+        let expr = Expression::Select {
+            selector: ast::InlineExpression::NumberLiteral { value: "99" },
+            variants: vec![
+                ast::Variant {
+                    key: VariantKey::NumberLiteral { value: "42" },
+                    value: ast::Pattern {
+                        elements: vec![PatternElement::TextElement { value: "meaning" }],
+                    },
+                    default: false,
+                },
+                ast::Variant {
+                    key: VariantKey::Identifier { name: "other" },
+                    value: ast::Pattern {
+                        elements: vec![PatternElement::TextElement { value: "fallback" }],
+                    },
+                    default: true,
+                },
+            ],
+        };
+        let result = convert_expression(&expr, &BTreeMap::new());
+        assert_eq!(result, Element::Text("fallback".to_string()));
+    }
+
+    #[test]
+    fn convert_expression_string_literal_selector_matches() {
+        use ast::VariantKey;
+        let expr = Expression::Select {
+            selector: ast::InlineExpression::StringLiteral { value: "hello" },
+            variants: vec![
+                ast::Variant {
+                    key: VariantKey::Identifier { name: "hello" },
+                    value: ast::Pattern {
+                        elements: vec![PatternElement::TextElement { value: "greeting" }],
+                    },
+                    default: false,
+                },
+                ast::Variant {
+                    key: VariantKey::Identifier { name: "other" },
+                    value: ast::Pattern {
+                        elements: vec![PatternElement::TextElement { value: "unknown" }],
+                    },
+                    default: true,
+                },
+            ],
+        };
+        let result = convert_expression(&expr, &BTreeMap::new());
+        assert_eq!(result, Element::Text("greeting".to_string()));
+    }
+
+    #[test]
+    fn convert_inline_expression_message_ref() {
+        let expr = InlineExpression::MessageReference {
+            id: ast::Identifier { name: "settings" },
+            attribute: None,
+        };
+        let result = convert_inline_expression(&expr);
+        assert_eq!(result, Element::MessageRef("settings".to_string()));
+    }
+
+    #[test]
+    fn convert_inline_expression_message_ref_with_attr() {
+        let expr = InlineExpression::MessageReference {
+            id: ast::Identifier { name: "save" },
+            attribute: Some(ast::Identifier { name: "label" }),
+        };
+        let result = convert_inline_expression(&expr);
+        assert_eq!(
+            result,
+            Element::AttributeRef {
+                owner: "save".to_string(),
+                name: "label".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn convert_inline_expression_term_ref() {
+        let expr = InlineExpression::TermReference {
+            id: ast::Identifier { name: "link" },
+            attribute: None,
+            arguments: Some(ast::CallArguments {
+                positional: vec![InlineExpression::VariableReference {
+                    id: ast::Identifier { name: "url" },
+                }],
+                named: vec![ast::NamedArgument {
+                    name: ast::Identifier { name: "class" },
+                    value: InlineExpression::StringLiteral { value: "btn" },
+                }],
+            }),
+        };
+        let result = convert_inline_expression(&expr);
+        assert!(matches!(result, Element::TermRef { .. }));
+        if let Element::TermRef {
+            name,
+            attribute,
+            args,
+            positional,
+        } = result
+        {
+            assert_eq!(name, "link");
+            assert!(attribute.is_none());
+            assert_eq!(args.len(), 1);
+            assert_eq!(positional.len(), 1);
+        }
+    }
+
+    #[test]
+    fn convert_inline_expression_string_literal() {
+        let expr = InlineExpression::StringLiteral { value: "hello" };
+        let result = convert_inline_expression(&expr);
+        assert_eq!(result, Element::Text("hello".to_string()));
+    }
+
+    #[test]
+    fn convert_inline_expression_number_literal() {
+        let expr = InlineExpression::NumberLiteral { value: "3.14" };
+        let result = convert_inline_expression(&expr);
+        assert_eq!(result, Element::Text("3.14".to_string()));
+    }
+
+    #[test]
+    fn convert_inline_expression_variable_ref() {
+        let expr = InlineExpression::VariableReference {
+            id: ast::Identifier { name: "name" },
+        };
+        let result = convert_inline_expression(&expr);
+        assert_eq!(result, Element::VarRef("name".to_string()));
+    }
+
+    #[test]
+    fn convert_expression_term_ref_as_selector() {
+        use ast::VariantKey;
+        let expr = Expression::Select {
+            selector: InlineExpression::TermReference {
+                id: ast::Identifier { name: "brand" },
+                attribute: Some(ast::Identifier { name: "gender" }),
+                arguments: None,
+            },
+            variants: vec![
+                ast::Variant {
+                    key: VariantKey::Identifier { name: "masculine" },
+                    value: ast::Pattern {
+                        elements: vec![PatternElement::TextElement { value: "Mr." }],
+                    },
+                    default: false,
+                },
+                ast::Variant {
+                    key: VariantKey::Identifier { name: "feminine" },
+                    value: ast::Pattern {
+                        elements: vec![PatternElement::TextElement { value: "Ms." }],
+                    },
+                    default: true,
+                },
+            ],
+        };
+        let result = convert_expression(&expr, &BTreeMap::new());
+        assert!(matches!(result, Element::TermAttrSelect { .. }));
+        if let Element::TermAttrSelect {
+            term,
+            attr,
+            variants,
+        } = result
+        {
+            assert_eq!(term, "brand");
+            assert_eq!(attr, "gender");
+            assert_eq!(variants.len(), 2);
+        }
+    }
+
+    #[test]
+    fn convert_collected_multiple_folds_to_select() {
+        let result = convert_collected(vec![
+            Element::Text("a".to_string()),
+            Element::VarRef("x".to_string()),
+        ]);
+        assert!(matches!(result, Element::Select { .. }));
     }
 
     #[test]

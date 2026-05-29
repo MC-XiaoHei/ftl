@@ -2,9 +2,9 @@ use std::fs;
 use std::path::Path;
 
 fn main() {
-    println!("cargo::rerun-if-changed=../cldr/cldr-core/supplemental/plurals.json");
     println!("cargo::rustc-check-cfg=cfg(coverage)");
     println!("cargo::rustc-check-cfg=cfg(coverage_nightly)");
+    println!("cargo::rerun-if-changed=../cldr/cldr-core/supplemental/plurals.json");
 
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let json_path = manifest_dir.join("../cldr/cldr-core/supplemental/plurals.json");

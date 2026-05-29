@@ -1,7 +1,7 @@
 ## 1. 基本消息
 settings = 设置
 hello = 你好，{ $name }！
-item-count = 您有 { NUMBER($count) } 个项目。
+item-count = 您有 { $count } 个项目。
 
 ## 2. 特殊字符与引用文本
 brace-demo = 花括号：{"{"} 和 {"}"}
@@ -118,31 +118,29 @@ finish-place =
        *[other] 您获得了第 { $place } 名！
     }
 
-## 11. 自定义内置函数测试：TEST($value, operator, operand)
+## 11. 内置函数
+
+### 11a. NUMBER()
+dpi-ratio = 您的 DPI 比率是 { NUMBER($ratio, minimumFractionDigits: 2) }
+
+### 11b. DATETIME()
+today-is = { DATETIME($date, year: 2024, month: 5, day: 17) }
+full-date = { DATETIME($date, monthFormat: "long", yearFormat: "numeric", dayFormat: "numeric", year: 2024, month: 5, day: 17) }
+
+### 11c. 自定义函数
 test-add-10 = { TEST($value, operator: "+", operand: 10) }
 test-sub-5 = { TEST($value, operator: "-", operand: 5) }
 test-mul-3 = { TEST($value, operator: "x", operand: 3) }
 test-div-2 = { TEST($value, operator: "/", operand: 2) }
 
-## 12. 内置函数
+## 12. 不支持的功能
 
-### 12a. NUMBER()
-dpi-ratio = 您的 DPI 比率是 { NUMBER($ratio, minimumFractionDigits: 2) }
-
-### 12b. DATETIME()
-today-is = { DATETIME($date, year: 2024, month: 5, day: 17) }
-full-date = { DATETIME($date, monthFormat: "long", yearFormat: "numeric", dayFormat: "numeric", year: 2024, month: 5, day: 17) }
-
-## 13. 不支持的功能
-
-# 13a. 函数调用作选择器
+# 12a. 函数调用作选择器
 # your-score =
 #     { NUMBER($score, minimumFractionDigits: 1) ->
 #         [0.0]   您得了零分。
 #        *[other] 您得了 { NUMBER($score, minimumFractionDigits: 1) } 分。
 #     }
-
-# 13b. 通过 NUMBER(&hellip;, type: "ordinal") 的序数
 # your-rank = { NUMBER($pos, type: "ordinal") ->
 #    [1] 第一名！
 #    [one] 第 { $pos } 名
@@ -151,8 +149,14 @@ full-date = { DATETIME($date, monthFormat: "long", yearFormat: "numeric", dayFor
 #   *[other] 第 { $pos } 名
 # }
 
-# 13c. 无上下文变量推断
-# 变量不会自动推断为 FluentDateTime/FluentNumber 类型，必须手动调用 DATETIME()/NUMBER() 函数。
-# 下面消息中的 $day 和 $count 将会被视为普通的字符串参数。
-# today = 今天是 { $day }
-# unread = 您有 { $count } 个未读消息。
+# 12b. 同一变量同时用作字符串和数字选择器
+#
+# conflict =
+#     { $x ->
+#         [male] 先生
+#        *[other] 用户
+#     }
+#     { $x ->
+#         [one] 单个
+#        *[other] 多个
+#     }

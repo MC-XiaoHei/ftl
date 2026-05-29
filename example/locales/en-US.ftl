@@ -1,7 +1,7 @@
 ## 1. Basic Messages
 settings = Settings
 hello = Hello, { $name }!
-item-count = You have { NUMBER($count) } items.
+item-count = You have { $count } items.
 
 ## 2. Special Characters & Quoted Text
 brace-demo = Brace: {"{"} and {"}"}
@@ -118,31 +118,29 @@ finish-place =
        *[other] You finished { $place }th!
     }
 
-## 11. Custom Built-in Test: TEST($value, operator, operand)
+## 11. Built-in Functions
+
+### 11a. NUMBER()
+dpi-ratio = Your DPI ratio is { NUMBER($ratio, minimumFractionDigits: 2) }
+
+### 11b. DATETIME()
+today-is = { DATETIME($date, year: 2024, month: 5, day: 17) }
+full-date = { DATETIME($date, monthFormat: "long", yearFormat: "numeric", dayFormat: "numeric", year: 2024, month: 5, day: 17) }
+
+### 11c. Custom Functions
 test-add-10 = { TEST($value, operator: "+", operand: 10) }
 test-sub-5 = { TEST($value, operator: "-", operand: 5) }
 test-mul-3 = { TEST($value, operator: "x", operand: 3) }
 test-div-2 = { TEST($value, operator: "/", operand: 2) }
 
-## 12. Built-in Functions
+## 12. Unsupported Features
 
-### 12a. NUMBER()
-dpi-ratio = Your DPI ratio is { NUMBER($ratio, minimumFractionDigits: 2) }
-
-### 12b. DATETIME()
-today-is = { DATETIME($date, year: 2024, month: 5, day: 17) }
-full-date = { DATETIME($date, monthFormat: "long", yearFormat: "numeric", dayFormat: "numeric", year: 2024, month: 5, day: 17) }
-
-## 13. Unsupported Features
-
-# 13a. Function call as selector
+# 12a. Function call as selector / Ordinal via NUMBER()
 # your-score =
 #     { NUMBER($score, minimumFractionDigits: 1) ->
 #         [0.0]   You scored zero points.
 #        *[other] You scored { NUMBER($score, minimumFractionDigits: 1) } points.
 #     }
-
-# 13b. Ordinal via NUMBER(&hellip;, type: "ordinal")
 # your-rank = { NUMBER($pos, type: "ordinal") ->
 #    [1] You finished first!
 #    [one] You finished { $pos }st
@@ -151,9 +149,13 @@ full-date = { DATETIME($date, monthFormat: "long", yearFormat: "numeric", dayFor
 #   *[other] You finished { $pos }th
 # }
 
-# 13c. No context-based type inference
-# Variables are not inferred as FluentDateTime/FluentNumber automatically.
-# You must call DATETIME()/NUMBER() explicitly.
-# Below, $day and $count would be treated as plain string parameters.
-# today = Today is { $day }
-# unread = You have { $count } unread messages.
+# 12b. Same variable as both string and numeric selector
+# conflict =
+#     { $x ->
+#         [male] Hi
+#        *[other] Hello
+#     }
+#     { $x ->
+#         [one] Single
+#        *[other] Multiple
+#     }

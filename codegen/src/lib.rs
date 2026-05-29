@@ -7,9 +7,6 @@ mod params;
 mod plural;
 mod util;
 
-#[cfg(feature = "builtin")]
-pub mod builtin;
-
 use std::collections::BTreeMap;
 use std::fs;
 
@@ -24,7 +21,7 @@ pub struct BuiltInNamedArg {
     pub arg_type: BuiltInArgType,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum BuiltInArgType {
     String,
     Int,
@@ -44,10 +41,6 @@ pub struct BuiltInFuncDef {
 }
 
 /// Produce a [`BuiltInFuncDef`] for registration.
-///
-/// With `impl |this, out|` or `impl |this, out, lang|`, codegen emits
-/// the type definition. Use 3-param form to access `lang` (the `Lang` enum)
-/// for locale-aware formatting.
 #[macro_export]
 macro_rules! ftl_builtin {
     (
@@ -130,10 +123,6 @@ pub fn __snake_to_camel(s: &str) -> String {
     out
 }
 
-#[cfg(test)]
-#[cfg_attr(coverage, coverage(off))]
-mod tests;
-
 /// Builder for code generation.
 pub struct Config {
     locales_dir: std::path::PathBuf,
@@ -181,22 +170,30 @@ impl Config {
 
     /// Register a built-in function definition.
     pub fn register(mut self, def: BuiltInFuncDef) -> Self {
-        self.builtins.insert(def.name.to_string(), def);
+        self.builtins.insert(def.name.clone(), def);
         self
     }
 
-    #[allow(unused_mut)]
+    /// Collect registered builtins, always including NUMBER and DATETIME.
     fn get_builtins(&self) -> BTreeMap<String, BuiltInFuncDef> {
         let mut builtins = self.builtins.clone();
-        #[cfg(feature = "builtin")]
-        {
-            builtins
-                .entry("NUMBER".to_string())
-                .or_insert_with(builtin::number);
-            builtins
-                .entry("DATETIME".to_string())
-                .or_insert_with(builtin::datetime);
-        }
+        // NUMBER and DATETIME are always available — fmt.rs handles them directly.
+        builtins
+            .entry("NUMBER".to_string())
+            .or_insert_with(|| BuiltInFuncDef {
+                name: "NUMBER".to_string(),
+                ty_name: "Number".to_string(),
+                named_args: Vec::new(),
+                write_to_body: None,
+            });
+        builtins
+            .entry("DATETIME".to_string())
+            .or_insert_with(|| BuiltInFuncDef {
+                name: "DATETIME".to_string(),
+                ty_name: "DateTime".to_string(),
+                named_args: Vec::new(),
+                write_to_body: None,
+            });
         builtins
     }
 
@@ -226,8 +223,47 @@ impl Config {
 
 #[cfg(test)]
 #[cfg_attr(coverage, coverage(off))]
+mod tests;
+
+#[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
 mod lib_tests {
     use super::*;
+
+    #[test]
+    fn snake_to_camel_basic() {
+        assert_eq!(__snake_to_camel("foo_bar"), "fooBar");
+    }
+
+    #[test]
+    fn snake_to_camel_single() {
+        assert_eq!(__snake_to_camel("foo"), "foo");
+    }
+
+    #[test]
+    fn snake_to_camel_consecutive_underscores() {
+        assert_eq!(__snake_to_camel("foo__bar"), "fooBar");
+    }
+
+    #[test]
+    fn snake_to_camel_trailing_underscore() {
+        assert_eq!(__snake_to_camel("foo_"), "foo");
+    }
+
+    #[test]
+    fn snake_to_camel_leading_underscore() {
+        assert_eq!(__snake_to_camel("_foo"), "Foo");
+    }
+
+    #[test]
+    fn snake_to_camel_empty() {
+        assert_eq!(__snake_to_camel(""), "");
+    }
+
+    #[test]
+    fn snake_to_camel_camel_already() {
+        assert_eq!(__snake_to_camel("fooBar"), "fooBar");
+    }
 
     #[test]
     fn generate_writes_output_file() {
@@ -255,171 +291,6 @@ mod lib_tests {
     }
 
     #[test]
-    fn generate_with_builtin_registration() {
-        let dir = std::path::PathBuf::from(std::env::temp_dir())
-            .join(format!("ftl_lib_builtin_{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-
-        let locales = dir.join("locales");
-        fs::create_dir_all(&locales).unwrap();
-        fs::write(
-            locales.join("en-US.ftl"),
-            "x = { NUMBER($n, minimumFractionDigits: 2) }\n",
-        )
-        .unwrap();
-
-        let out = dir.join("out.rs");
-        let number_def = ftl_builtin! {
-            Number(FluentNum) {
-                minimum_fraction_digits: i64,
-                style: String,
-            }
-        };
-        generator()
-            .locales_dir(&locales)
-            .default_lang("en-US")
-            .output_path(&out)
-            .register(number_def)
-            .generate();
-
-        let code = fs::read_to_string(&out).unwrap();
-        assert!(code.contains("minimum_fraction_digits(2i64)"));
-        assert!(code.contains("write_to"));
-
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn builtin_registration_generates_valid_rust() {
-        let dir = std::path::PathBuf::from(std::env::temp_dir())
-            .join(format!("ftl_lib_builtin_emit_{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-
-        let locales = dir.join("locales");
-        fs::create_dir_all(&locales).unwrap();
-        fs::write(
-            locales.join("en-US.ftl"),
-            "price = Price: { NUMBER($amount, minimumFractionDigits: 2, style: \"decimal\") }\n",
-        )
-        .unwrap();
-
-        let out = dir.join("out.rs");
-        let number_def = ftl_builtin! {
-            Number(FluentNum) {
-                minimum_fraction_digits: i64,
-                style: String,
-            }
-        };
-        generator()
-            .locales_dir(&locales)
-            .default_lang("en-US")
-            .output_path(&out)
-            .register(number_def)
-            .generate();
-
-        let code = fs::read_to_string(&out).unwrap();
-        assert!(
-            code.contains("amount: impl Into<Number>"),
-            "should use impl Into<Number>"
-        );
-        assert!(code.contains("minimum_fraction_digits(2i64)"));
-        assert!(code.contains("style(\"decimal\".to_string())"));
-        assert!(code.contains(".write_to(&mut s)"));
-
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn snake_to_camel_conversions() {
-        assert_eq!(
-            super::__snake_to_camel("minimum_fraction_digits"),
-            "minimumFractionDigits"
-        );
-        assert_eq!(super::__snake_to_camel("style"), "style");
-        assert_eq!(super::__snake_to_camel("use_grouping"), "useGrouping");
-        assert_eq!(super::__snake_to_camel("compact_display"), "compactDisplay");
-    }
-
-    #[test]
-    fn builtin_with_body_emits_type_definition() {
-        let dir = std::path::PathBuf::from(std::env::temp_dir())
-            .join(format!("ftl_lib_builtin_body_{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-
-        let locales = dir.join("locales");
-        fs::create_dir_all(&locales).unwrap();
-        fs::write(
-            locales.join("en-US.ftl"),
-            "r = { TEST($v, operator: \"+\", operand: 10) }\n",
-        )
-        .unwrap();
-
-        let out = dir.join("out.rs");
-        let test_def = ftl_builtin! {
-            Test(FluentNum) {
-                operator: String,
-                operand: f64,
-            } impl |this, out| {
-                let result = *this.value + this.operand.unwrap_or(0.0);
-                write!(out, "{}", result).unwrap();
-            }
-        };
-        generator()
-            .locales_dir(&locales)
-            .default_lang("en-US")
-            .output_path(&out)
-            .register(test_def)
-            .generate();
-
-        let code = fs::read_to_string(&out).unwrap();
-        assert!(code.contains("pub struct Test {"));
-        assert!(code.contains("pub fn new"));
-        assert!(code.contains("pub fn operator"));
-        assert!(code.contains("fn write_to"));
-        assert!(code.contains("this.operand.unwrap_or"));
-        assert!(code.contains("v: impl Into<Test>"));
-
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn builtin_with_lang_param() {
-        let dir = std::path::PathBuf::from(std::env::temp_dir())
-            .join(format!("ftl_lib_builtin_lang_{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-
-        let locales = dir.join("locales");
-        fs::create_dir_all(&locales).unwrap();
-        fs::write(locales.join("en-US.ftl"), "r = { TEST($v) }\n").unwrap();
-
-        let out = dir.join("out.rs");
-        let test_def = ftl_builtin! {
-            Test(FluentNum) {
-                prefix: String,
-            } impl |this, out, lang| {
-                let _ = lang;
-                write!(out, "{}{}", this.prefix.as_deref().unwrap_or(""), *this.value).unwrap();
-            }
-        };
-        generator()
-            .locales_dir(&locales)
-            .default_lang("en-US")
-            .output_path(&out)
-            .register(test_def)
-            .generate();
-
-        let code = fs::read_to_string(&out).unwrap();
-        assert!(code.contains("fn write_to_with"));
-        assert!(code.contains("lang: Lang"));
-
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
     #[should_panic(expected = "Failed to write")]
     fn generate_panics_on_bad_path() {
         let dir = std::path::PathBuf::from(std::env::temp_dir())
@@ -432,5 +303,87 @@ mod lib_tests {
             .default_lang("en-US")
             .output_path(dir.join("nope/out.rs"))
             .generate();
+    }
+
+    #[test]
+    fn get_builtins_always_includes_number_and_datetime() {
+        let builtins = generator().get_builtins();
+        assert!(builtins.contains_key("NUMBER"));
+        assert!(builtins.contains_key("DATETIME"));
+    }
+
+    #[test]
+    fn register_custom_builtin() {
+        let def = BuiltInFuncDef {
+            name: "CUSTOM".to_string(),
+            ty_name: "Custom".to_string(),
+            named_args: vec![],
+            write_to_body: Some("write!(out, \"custom\").unwrap();".to_string()),
+        };
+        let builtins = generator().register(def).get_builtins();
+        assert!(builtins.contains_key("CUSTOM"));
+    }
+
+    #[test]
+    fn module_path_appears_in_generated_code() {
+        let dir = std::path::PathBuf::from(std::env::temp_dir())
+            .join(format!("ftl_modpath_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let locales = dir.join("locales");
+        fs::create_dir_all(&locales).unwrap();
+        fs::write(locales.join("en-US.ftl"), "x = 1\n").unwrap();
+
+        let out = dir.join("out.rs");
+        generator()
+            .locales_dir(&locales)
+            .default_lang("en-US")
+            .module_path("i18n")
+            .output_path(&out)
+            .generate();
+
+        let code = fs::read_to_string(&out).unwrap();
+        assert!(code.contains("$crate::i18n"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn ftl_builtin_macro_with_body() {
+        let def = ftl_builtin! {
+            Html(f64) {
+                class: String,
+                count: i64,
+                ratio: f64,
+                enabled: bool,
+            }
+            impl |this, out| {
+                write!(out, "<div>\"{}\"</div>", this.value).unwrap();
+            }
+        };
+        assert_eq!(def.name, "HTML");
+        assert_eq!(def.ty_name, "Html");
+        assert!(def.write_to_body.is_some());
+        assert_eq!(def.named_args.len(), 4);
+        assert_eq!(def.named_args[0].ftl_name, "class");
+        assert_eq!(def.named_args[1].ftl_name, "count");
+        assert_eq!(def.named_args[2].ftl_name, "ratio");
+        assert_eq!(def.named_args[3].ftl_name, "enabled");
+    }
+
+    #[test]
+    fn ftl_builtin_macro_without_body() {
+        let def = ftl_builtin! {
+            Bold(f64) {
+                level: i64,
+            }
+        };
+        assert_eq!(def.name, "BOLD");
+        assert_eq!(def.ty_name, "Bold");
+        assert!(def.write_to_body.is_none());
+        assert_eq!(def.named_args.len(), 1);
+        assert_eq!(def.named_args[0].ftl_name, "level");
+        assert_eq!(def.named_args[0].arg_type, BuiltInArgType::Int);
     }
 }

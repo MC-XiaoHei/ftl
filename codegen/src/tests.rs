@@ -28,7 +28,7 @@ fn full_pipeline_generates_valid_rust() {
 
     let code = fs::read_to_string(&out).unwrap();
     assert!(code.contains("pub fn settings() -> &'static str"));
-    assert!(code.contains("pub fn hello(name: &str) -> String"));
+    assert!(code.contains("pub fn hello<'a>(name: impl Into<ftl_core::FluentArg<'a>>) -> String"));
     assert!(code.contains("pub mod en_us"));
     assert!(code.contains("pub mod zh_cn"));
     assert!(code.contains("pub enum Lang"));
@@ -143,6 +143,39 @@ fn generator_skips_non_ftl_files() {
 
     let gen = Generator::load_simple(&dir, "en-US", "");
     assert_eq!(gen.locales.len(), 1);
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn generator_with_string_selector() {
+    use crate::parse::Generator;
+    use std::fs;
+    use std::path::PathBuf;
+
+    let dir =
+        PathBuf::from(std::env::temp_dir()).join(format!("ftl_test_strsel_{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+
+    fs::write(
+        dir.join("en-US.ftl"),
+        "greeting = { $gender ->\n    [male] Hello, sir\n   *[female] Hello, madam\n}\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.join("zh-CN.ftl"),
+        "greeting = { $gender ->\n    [male] 您好，先生\n   *[female] 您好，女士\n}\n",
+    )
+    .unwrap();
+
+    let gen = Generator::load_simple(&dir, "en-US", "");
+    let code = gen.generate();
+    assert!(code.contains("fn greeting<'a>(gender: impl Into<ftl_core::FluentArg<'a>>)"));
+    assert!(code.contains("match __sel.as_str()"));
+    assert!(code.contains("\"male\" =>"));
+    assert!(code.contains("Hello, sir"));
+    assert!(code.contains("Hello, madam"));
 
     let _ = fs::remove_dir_all(&dir);
 }
@@ -301,8 +334,10 @@ fn message_attributes_support_refs_and_variable_propagation() {
     let gen = Generator::load_simple(&dir, "en-US", "");
     let code = gen.generate();
     assert!(code.contains("pub fn save__label() -> &'static str { \"Save Zed\" }"));
-    assert!(code.contains("fn save__tooltip(target: &str) -> String"));
-    assert!(code.contains("s.push_str(target);"));
+    assert!(
+        code.contains("fn save__tooltip<'a>(target: impl Into<ftl_core::FluentArg<'a>>) -> String")
+    );
+    assert!(code.contains("target.into().write_localized(&mut s);"));
 
     let _ = fs::remove_dir_all(&dir);
 }
@@ -555,8 +590,8 @@ fn free_variables_propagate_through_message_references() {
 
     let gen = Generator::load_simple(&dir, "en-US", "");
     let code = gen.generate();
-    assert!(code.contains("fn welcome(user: &str) -> String"));
-    assert!(code.contains("s.push_str(user);"));
+    assert!(code.contains("fn welcome<'a>(user: impl Into<ftl_core::FluentArg<'a>>) -> String"));
+    assert!(code.contains("user.into().write_localized(&mut s);"));
 
     let _ = fs::remove_dir_all(&dir);
 }
@@ -963,19 +998,179 @@ fn diag_parse_error_expected_literal_inline() {
 }
 
 #[test]
-#[should_panic(expected = "Unrecognized function 'NUMBER'")]
-fn unsupported_number_function_requires_register() {
-    let dir = temp_dir("unsup_num");
-    write_ftl(&dir, "en-US.ftl", "x = { NUMBER($n) }\n");
-    crate::parse::Generator::load_simple(&dir, "en-US", "");
+fn number_function_works_without_registration() {
+    use crate::parse::Generator;
+    let dir = temp_dir("num_ok");
+    write_ftl(
+        &dir,
+        "en-US.ftl",
+        "x = { NUMBER($n) }
+",
+    );
+    let gen = Generator::load_simple(&dir, "en-US", "");
+    assert!(!gen
+        .diags
+        .iter()
+        .any(|d| d.kind == crate::diag::DiagKind::Error));
 }
 
 #[test]
-#[should_panic(expected = "Unrecognized function 'DATETIME'")]
-fn unsupported_datetime_function_requires_register() {
-    let dir = temp_dir("unsup_dt");
-    write_ftl(&dir, "en-US.ftl", "x = { DATETIME($d) }\n");
-    crate::parse::Generator::load_simple(&dir, "en-US", "");
+fn datetime_function_works_without_registration() {
+    use crate::parse::Generator;
+    let dir = temp_dir("dt_ok");
+    write_ftl(
+        &dir,
+        "en-US.ftl",
+        "x = { DATETIME($d) }
+",
+    );
+    let gen = Generator::load_simple(&dir, "en-US", "");
+    assert!(!gen
+        .diags
+        .iter()
+        .any(|d| d.kind == crate::diag::DiagKind::Error));
+}
+
+#[test]
+#[should_panic(expected = "1 error(s)")]
+fn invalid_locale_produces_diagnostic() {
+    use crate::parse::Generator;
+
+    let dir = temp_dir("inv_loc");
+    write_ftl(&dir, "zh-CN.ftl", "x = 1\n");
+    write_ftl(&dir, "foo_bar.ftl", "y = 2\n");
+
+    let gen = Generator::load_simple(&dir, "zh-CN", "");
+    // load_simple calls report_diagnostics which panics on errors
+    let _ = gen;
+}
+
+#[test]
+fn custom_builtin_with_body_emits_struct() {
+    use crate::parse::Generator;
+    use crate::BuiltInFuncDef;
+
+    let dir = temp_dir("cust_builtin");
+    write_ftl(&dir, "en-US.ftl", "x = { HTML($input) }\n");
+
+    use crate::{BuiltInArgType, BuiltInNamedArg};
+    use std::collections::BTreeMap;
+    let mut builtins = BTreeMap::new();
+    builtins.insert(
+        "HTML".to_string(),
+        BuiltInFuncDef {
+            name: "HTML".to_string(),
+            ty_name: "Html".to_string(),
+            named_args: vec![BuiltInNamedArg {
+                ftl_name: "class".to_string(),
+                rust_name: "class".to_string(),
+                arg_type: BuiltInArgType::String,
+            }],
+            write_to_body: Some(
+                "write!(out, \"<div>\\\"{}\\\"</div>\", this.value).unwrap();".to_string(),
+            ),
+        },
+    );
+
+    let gen = Generator::load(&dir, "en-US", "", &builtins);
+    let code = gen.generate();
+    assert!(code.contains("pub struct Html"));
+    assert!(code.contains("pub value: FluentNum"));
+    assert!(code.contains("pub class: Option<String>"));
+    assert!(code.contains("pub fn new"));
+    assert!(code.contains("pub fn class"));
+    assert!(code.contains("pub fn write_to"));
+    assert!(code.contains("pub fn write_to_with"));
+}
+
+#[test]
+fn term_attr_select_fallback_to_default() {
+    use crate::parse::Generator;
+
+    let dir = temp_dir("ta_def");
+    // Term attribute value "other" doesn't match any key
+    write_ftl(
+        &dir,
+        "en-US.ftl",
+        "-brand = Hi\n    .gender = other\n-greeting =\n    { -brand.gender ->\n        [masculine] Mr.\n       *[feminine] Ms.\n    }\nmsg = { -greeting }\n",
+    );
+
+    let gen = Generator::load_simple(&dir, "en-US", "");
+    let code = gen.generate();
+    // The "other" value doesn't match "masculine" or "feminine",
+    // so the default variant "feminine" (Ms.) is used
+    assert!(!code.contains("Mr."));
+    assert!(code.contains("Ms."));
+}
+
+#[test]
+fn number_with_named_args_covers_closure_branches() {
+    use crate::parse::Generator;
+
+    // NUMBER with optional named args — covers `Some(raw)` branches
+    // in the v/v_bool/v_str closures.
+    // Use numbers and strings for named args — booleans aren't supported
+    // as named arg values in FTL fluent_syntax.
+    let dir = temp_dir("num_args");
+    write_ftl(
+        &dir,
+        "en-US.ftl",
+        "x = { NUMBER($n, minimumFractionDigits: 2, maximumFractionDigits: 4, style: \"percent\") }\n",
+    );
+
+    let gen = Generator::load_simple(&dir, "en-US", "");
+    let code = gen.generate();
+    assert!(code.contains("Some(2i64)")); // minimumFractionDigits
+    assert!(code.contains("Some(4i64)")); // maximumFractionDigits
+    assert!(code.contains("Some(\"percent\")")); // style string literal
+}
+
+#[test]
+fn datetime_with_various_args_covers_closure_branches() {
+    use crate::parse::Generator;
+
+    let dir = temp_dir("dt_args");
+    write_ftl(
+        &dir,
+        "en-US.ftl",
+        "x = { DATETIME($d, dateStyle: \"long\", timeStyle: \"short\", timeZone: \"UTC\") }\n",
+    );
+
+    let gen = Generator::load_simple(&dir, "en-US", "");
+    let code = gen.generate();
+    assert!(code.contains("Some(\"long\")")); // dateStyle string
+    assert!(code.contains("Some(\"short\")")); // timeStyle string
+    assert!(code.contains("Some(\"UTC\")")); // timeZone
+    assert!(code.contains("None")); // unset optional args
+}
+
+#[test]
+fn number_with_currency_style_covers_str_closure() {
+    use crate::parse::Generator;
+
+    let dir = temp_dir("num_cur");
+    write_ftl(
+        &dir,
+        "en-US.ftl",
+        "x = { NUMBER($n, style: \"percent\") }\n",
+    );
+
+    let gen = Generator::load_simple(&dir, "en-US", "");
+    let code = gen.generate();
+    assert!(code.contains("Some(\"percent\")"));
+}
+
+#[test]
+fn number_with_bool_false_named_arg_covers_bool_false_branch() {
+    use crate::parse::Generator;
+
+    let dir = temp_dir("num_bf");
+    write_ftl(&dir, "en-US.ftl", "x = { NUMBER($n, useGrouping: 0) }\n");
+
+    let gen = Generator::load_simple(&dir, "en-US", "");
+    let code = gen.generate();
+    // useGrouping: 0 should map to "Some(false)" via the `Some(_)` branch
+    assert!(code.contains("Some(false)"));
 }
 
 #[test]

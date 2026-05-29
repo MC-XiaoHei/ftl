@@ -5,7 +5,7 @@ use icu_decimal::{self, DecimalFormatter};
 use std::fmt::Write;
 use writeable::Writeable;
 
-pub fn format_number(
+pub fn format(
     value: f64,
     min_fraction_digits: Option<i64>,
     max_fraction_digits: Option<i64>,
@@ -24,16 +24,15 @@ pub fn format_number(
         return;
     }
     if value.is_infinite() {
-        if value.is_sign_negative() {
-            out.push_str("-∞");
+        out.push_str(if value.is_sign_negative() {
+            "-∞"
         } else {
-            out.push_str("∞");
-        }
+            "∞"
+        });
         return;
     }
 
-    let style = style.unwrap_or("decimal");
-    match style {
+    match style.unwrap_or("decimal") {
         "percent" => format_percent(value, locale, out),
         "currency" => format_currency(value, currency, currency_display, locale, out),
         _ => format_decimal(
@@ -52,23 +51,17 @@ pub fn format_number(
 
 fn format_decimal(
     value: f64,
-    min_fraction_digits: Option<i64>,
-    max_fraction_digits: Option<i64>,
-    min_significant_digits: Option<i64>,
-    max_significant_digits: Option<i64>,
-    min_integer_digits: Option<i64>,
+    min_frac: Option<i64>,
+    max_frac: Option<i64>,
+    min_sig: Option<i64>,
+    max_sig: Option<i64>,
+    min_int: Option<i64>,
     use_grouping: Option<bool>,
     locale: &unic_langid::LanguageIdentifier,
     out: &mut String,
 ) {
-    let mut dec = f64_to_decimal(
-        value,
-        min_fraction_digits,
-        max_fraction_digits,
-        min_significant_digits,
-        max_significant_digits,
-    );
-    if let Some(mid) = min_integer_digits.filter(|&m| m > 1) {
+    let mut dec = f64_to_decimal(value, min_frac, max_frac, min_sig, max_sig);
+    if let Some(mid) = min_int.filter(|&m| m > 1) {
         let upper = *dec.absolute.magnitude_range().end();
         let target = mid as i16;
         if upper < target - 1 {
@@ -137,6 +130,11 @@ fn format_currency(
     }
 }
 
+enum CurrencyPlacement {
+    Prefix,
+    Suffix,
+}
+
 fn write_currency(out: &mut String, label: &str, number: &str, placement: CurrencyPlacement) {
     let sep = if label.chars().count() <= 1 { "" } else { " " };
     match placement {
@@ -147,11 +145,6 @@ fn write_currency(out: &mut String, label: &str, number: &str, placement: Curren
             let _ = write!(out, "{}{}{}", number, sep, label);
         }
     }
-}
-
-enum CurrencyPlacement {
-    Prefix,
-    Suffix,
 }
 
 fn extract_currency_placement(pattern: &str) -> Option<CurrencyPlacement> {
@@ -226,8 +219,9 @@ fn pad_to_sig_digits(dec: &mut Decimal, target: i16) {
 }
 
 fn to_prefs(locale: &unic_langid::LanguageIdentifier) -> icu_decimal::DecimalFormatterPreferences {
-    let s = locale.to_string();
-    s.parse::<icu_locale_core::Locale>()
+    locale
+        .to_string()
+        .parse::<icu_locale_core::Locale>()
         .ok()
         .map(|l| l.into())
         .unwrap_or_default()
@@ -278,11 +272,17 @@ mod tests {
                 _ => {}
             }
         }
-        format_number(
+        format(
             value, min_frac, max_frac, min_sig, max_sig, min_int, grouping, style, curr, curr_disp,
             &mut out, loc,
         );
         out
+    }
+
+    #[test]
+    fn decimal_unknown_option() {
+        // exercise the catch-all `_ => {}` branch in test helper
+        assert_eq!(fmt(1.0, &[("nonexistent", "value")], &en()), "1");
     }
 
     #[test]
@@ -334,11 +334,11 @@ mod tests {
     }
     #[test]
     fn decimal_neg_inf() {
-        assert_eq!(fmt(f64::NEG_INFINITY, &[], &en()), "-∞");
+        assert_eq!(fmt(f64::NEG_INFINITY, &[], &en()), "-\u{221e}");
     }
     #[test]
     fn decimal_pos_inf() {
-        assert_eq!(fmt(f64::INFINITY, &[], &en()), "∞");
+        assert_eq!(fmt(f64::INFINITY, &[], &en()), "\u{221e}");
     }
     #[test]
     fn decimal_grouping_auto() {
@@ -390,7 +390,7 @@ mod tests {
     #[test]
     fn percent_arabic() {
         let r = fmt(0.5, &[("style", "percent")], &locale("ar"));
-        assert!(r.contains('٪') || r.contains('%'), "got: {r}");
+        assert!(r.contains('\u{066a}') || r.contains('%'), "got: {r}");
     }
     #[test]
     fn percent_fallback() {
@@ -438,7 +438,7 @@ mod tests {
                 &[("style", "currency"), ("currency", "EUR")],
                 &locale("en-XY")
             ),
-            "€3.50"
+            "\u{20ac}3.50"
         );
     }
     #[test]
@@ -448,7 +448,7 @@ mod tests {
             &[("style", "currency"), ("currency", "EUR")],
             &locale("fr"),
         );
-        assert!(r.contains("€") || r.contains("EUR"), "got: {r}");
+        assert!(r.contains("\u{20ac}") || r.contains("EUR"), "got: {r}");
     }
     #[test]
     fn currency_name() {
@@ -496,14 +496,14 @@ mod tests {
     #[test]
     fn currency_prefix_placement() {
         assert!(matches!(
-            extract_currency_placement("¤#,##0.00"),
+            extract_currency_placement("\u{00a4}#,##0.00"),
             Some(CurrencyPlacement::Prefix)
         ));
     }
     #[test]
     fn currency_suffix_placement() {
         assert!(matches!(
-            extract_currency_placement("#,##0.00¤"),
+            extract_currency_placement("#,##0.00\u{00a4}"),
             Some(CurrencyPlacement::Suffix)
         ));
     }

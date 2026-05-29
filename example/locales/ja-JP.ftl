@@ -1,7 +1,7 @@
 ## 1. 基本的なメッセージ
 settings = 設定
 hello = こんにちは、{ $name }！
-item-count = アイテムが { NUMBER($count) } 個あります。
+item-count = アイテムが { $count } 個あります。
 
 ## 2. 特殊文字と引用テキスト
 brace-demo = 中括弧：{"{"} と {"}"}
@@ -118,31 +118,29 @@ finish-place =
        *[other] { $place }位になりました！
     }
 
-## 11. カスタム組み込み関数テスト：TEST($value, operator, operand)
+## 11. 組み込み関数
+
+### 11a. NUMBER()
+dpi-ratio = DPI 比率は { NUMBER($ratio, minimumFractionDigits: 2) } です
+
+### 11b. DATETIME()
+today-is = { DATETIME($date, year: 2024, month: 5, day: 17) }
+full-date = { DATETIME($date, monthFormat: "long", yearFormat: "numeric", dayFormat: "numeric", year: 2024, month: 5, day: 17) }
+
+### 11c. カスタム関数
 test-add-10 = { TEST($value, operator: "+", operand: 10) }
 test-sub-5 = { TEST($value, operator: "-", operand: 5) }
 test-mul-3 = { TEST($value, operator: "x", operand: 3) }
 test-div-2 = { TEST($value, operator: "/", operand: 2) }
 
-## 12. 組み込み関数
+## 12. 未サポートの機能
 
-### 12a. NUMBER()
-dpi-ratio = DPI 比率は { NUMBER($ratio, minimumFractionDigits: 2) } です
-
-### 12b. DATETIME()
-today-is = { DATETIME($date, year: 2024, month: 5, day: 17) }
-full-date = { DATETIME($date, monthFormat: "long", yearFormat: "numeric", dayFormat: "numeric", year: 2024, month: 5, day: 17) }
-
-## 13. 未サポートの機能
-
-# 13a. 関数呼び出しをセレクターに使用
+# 12a. 関数呼び出しをセレクターに使用 / NUMBER() による序数
 # your-score =
 #     { NUMBER($score, minimumFractionDigits: 1) ->
 #         [0.0]   0点でした。
 #        *[other] { NUMBER($score, minimumFractionDigits: 1) } 点でした。
 #     }
-
-# 13b. NUMBER(&hellip;, type: "ordinal") による序数
 # your-rank = { NUMBER($pos, type: "ordinal") ->
 #    [1] 1位！
 #    [one] { $pos }位
@@ -151,9 +149,13 @@ full-date = { DATETIME($date, monthFormat: "long", yearFormat: "numeric", dayFor
 #   *[other] { $pos }位
 # }
 
-# 13c. コンテキストに基づく型推論なし
-# 変数は自動的に FluentDateTime/FluentNumber として推論されません。
-# DATETIME()/NUMBER() 関数を明示的に呼び出す必要があります。
-# 以下の $day や $count は単なる文字列パラメータとして扱われます。
-# today = 今日は { $day } です
-# unread = 未読メッセージが { $count } 件あります。
+# 12b. 同一変数が文字列・数値両方のセレクターとして使用される場合
+# conflict =
+#     { $x ->
+#         [male] 様
+#        *[other] ユーザー
+#     }
+#     { $x ->
+#         [one] 単数
+#        *[other] 複数
+#     }

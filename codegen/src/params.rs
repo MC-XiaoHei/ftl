@@ -55,6 +55,14 @@ fn collect_params_into(
                 }
             }
             Element::BuiltInCall {
+                func_name,
+                var_name,
+                ty_name,
+                ..
+            } if func_name == "NUMBER" || func_name == "DATETIME" => {
+                register_usage(var_name, ParamUsage::SelectorNum, map, usage, context);
+            }
+            Element::BuiltInCall {
                 var_name, ty_name, ..
             } => {
                 register_usage(
@@ -144,10 +152,7 @@ fn infer_selector_type(variants: &[Variant]) -> ParamType {
     if variants.iter().any(|v| matches!(v.key, KeyType::Num(_))) {
         return ParamType::Num;
     }
-    if variants.iter().any(|v| match &v.key {
-        KeyType::Ident(name) => NUMERIC_PLURAL_CATEGORIES.contains(&name.as_str()),
-        KeyType::Num(_) => false,
-    }) {
+    if variants.iter().any(|v| matches!(&v.key, KeyType::Ident(name) if NUMERIC_PLURAL_CATEGORIES.contains(&name.as_str()))) {
         return ParamType::Num;
     }
     // All variants have Ident keys but not numeric categories → string selector
@@ -251,6 +256,185 @@ mod tests {
         ];
         let map = collect_params_with_context(&elems, "test");
         assert_eq!(map["x"], ParamType::Str);
+    }
+
+    #[test]
+    fn builtin_call_custom_function() {
+        let elems = [Element::BuiltInCall {
+            func_name: "HTML".to_string(),
+            var_name: "input".to_string(),
+            ty_name: "Html".to_string(),
+            named_args: [("class".to_string(), "btn".to_string())].into(),
+        }];
+        let map = collect_params_with_context(&elems, "test");
+        assert_eq!(map["input"], ParamType::Builtin("Html".to_string()));
+    }
+
+    #[test]
+    fn builtin_call_number_infers_num_parameter() {
+        let elems = [Element::BuiltInCall {
+            func_name: "NUMBER".to_string(),
+            var_name: "count".to_string(),
+            ty_name: "".to_string(),
+            named_args: BTreeMap::new(),
+        }];
+        let map = collect_params_with_context(&elems, "test");
+        assert_eq!(map["count"], ParamType::Num);
+    }
+
+    #[test]
+    fn builtin_call_datetime_infers_num_parameter() {
+        let elems = [Element::BuiltInCall {
+            func_name: "DATETIME".to_string(),
+            var_name: "date".to_string(),
+            ty_name: "".to_string(),
+            named_args: BTreeMap::new(),
+        }];
+        let map = collect_params_with_context(&elems, "test");
+        assert_eq!(map["date"], ParamType::Num);
+    }
+
+    #[test]
+    fn term_ref_propagates_args() {
+        let elems = [
+            Element::TermRef {
+                name: "link".to_string(),
+                attribute: None,
+                args: [("url".to_string(), Element::VarRef("url".to_string()))].into(),
+                positional: vec![],
+            },
+            Element::VarRef("url".to_string()),
+        ];
+        let map = collect_params_with_context(&elems, "test");
+        assert_eq!(map["url"], ParamType::Str);
+    }
+
+    #[test]
+    fn term_attr_select_propagates_elements() {
+        let elems = [Element::TermAttrSelect {
+            term: "link".to_string(),
+            attr: "text".to_string(),
+            variants: vec![Variant {
+                key: KeyType::Ident("text".into()),
+                elements: vec![Element::VarRef("label".into())],
+                default: true,
+            }],
+        }];
+        let map = collect_params_with_context(&elems, "test");
+        assert_eq!(map["label"], ParamType::Str);
+    }
+
+    #[test]
+    fn infer_selector_type_num_via_digit_key() {
+        let variants = vec![
+            Variant {
+                key: KeyType::Num("1".into()),
+                elements: vec![Element::Text("one".into())],
+                default: false,
+            },
+            Variant {
+                key: KeyType::Ident("other".into()),
+                elements: vec![Element::Text("many".into())],
+                default: true,
+            },
+        ];
+        assert_eq!(infer_selector_type(&variants), ParamType::Num);
+    }
+
+    #[test]
+    fn infer_selector_type_ident_but_non_numeric_is_str() {
+        let variants = vec![
+            Variant {
+                key: KeyType::Ident("male".into()),
+                elements: vec![Element::Text("m".into())],
+                default: false,
+            },
+            Variant {
+                key: KeyType::Ident("female".into()),
+                elements: vec![Element::Text("f".into())],
+                default: false,
+            },
+            Variant {
+                key: KeyType::Ident("other".into()),
+                elements: vec![Element::Text("o".into())],
+                default: true,
+            },
+        ];
+        assert_eq!(infer_selector_type(&variants), ParamType::Str);
+    }
+
+    #[test]
+    fn builtin_merge_same_type() {
+        let elems = [
+            Element::BuiltInCall {
+                func_name: "HTML".to_string(),
+                var_name: "input".to_string(),
+                ty_name: "Html".to_string(),
+                named_args: [("class".to_string(), "btn".to_string())].into(),
+            },
+            Element::BuiltInCall {
+                func_name: "HTML".to_string(),
+                var_name: "input".to_string(),
+                ty_name: "Html".to_string(),
+                named_args: [("id".to_string(), "x".to_string())].into(),
+            },
+        ];
+        let map = collect_params_with_context(&elems, "test");
+        assert_eq!(map["input"], ParamType::Builtin("Html".to_string()));
+    }
+
+    #[test]
+    #[should_panic(expected = "conflicting inferred types")]
+    fn builtin_vs_interpolation_conflict() {
+        // BuiltInCall first → existing = Builtin, new = Interpolation
+        // hits (Builtin(_), _other)
+        let elems = [
+            Element::BuiltInCall {
+                func_name: "HTML".to_string(),
+                var_name: "input".to_string(),
+                ty_name: "Html".to_string(),
+                named_args: BTreeMap::new(),
+            },
+            Element::VarRef("input".to_string()),
+        ];
+        let _ = collect_params_with_context(&elems, "test");
+    }
+
+    #[test]
+    #[should_panic(expected = "conflicting inferred types")]
+    fn interpolation_vs_builtin_conflict() {
+        // VarRef first → existing = Interpolation, new = Builtin
+        // hits (_other, Builtin(_))
+        let elems = [
+            Element::VarRef("input".to_string()),
+            Element::BuiltInCall {
+                func_name: "HTML".to_string(),
+                var_name: "input".to_string(),
+                ty_name: "Html".to_string(),
+                named_args: BTreeMap::new(),
+            },
+        ];
+        let _ = collect_params_with_context(&elems, "test");
+    }
+
+    #[test]
+    #[should_panic(expected = "conflicting built-in types")]
+    fn detect_builtin_type_conflict() {
+        let elems = [
+            Element::BuiltInCall {
+                func_name: "CUSTOM_A".to_string(),
+                var_name: "x".to_string(),
+                ty_name: "CustomA".to_string(),
+                named_args: BTreeMap::new(),
+            },
+            Element::BuiltInCall {
+                func_name: "CUSTOM_B".to_string(),
+                var_name: "x".to_string(),
+                ty_name: "CustomB".to_string(),
+                named_args: BTreeMap::new(),
+            },
+        ];
+        let _ = collect_params_with_context(&elems, "test");
     }
 
     #[test]

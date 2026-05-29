@@ -8,11 +8,10 @@ harness = false
 name = "i18n_bench"
 
 [dependencies]
-ftl-builtin = { path = "../builtin" }
-unic-langid = { version = "0.9", features = ["unic-langid-macros"] }
+ftl-core = { path = "../core" }
 
 [dev-dependencies]
 criterion = "0.8"
 
 [build-dependencies]
-ftl-codegen = { path = "../codegen", features = ["builtin"] }
+ftl-codegen = { path = "../codegen" }

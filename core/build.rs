@@ -3,13 +3,14 @@ use std::fs;
 use std::path::Path;
 
 fn main() {
+    println!("cargo::rustc-check-cfg=cfg(coverage)");
+
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let cldr_main = manifest_dir.join("../cldr/cldr-numbers-full/main");
     let out_dir_str = std::env::var("OUT_DIR").unwrap();
     let out_path = Path::new(&out_dir_str).join("cldr_generated.rs");
 
     println!("cargo::rerun-if-changed=../cldr/cldr-numbers-full/main");
-    println!("cargo::rustc-check-cfg=cfg(coverage)");
 
     let mut dirs: Vec<String> = Vec::new();
     for entry in fs::read_dir(&cldr_main).unwrap() {
@@ -92,7 +93,7 @@ fn emit_currency_arrays(code: &mut String, dirs: &[String], cldr_main: &Path) {
 }
 
 fn emit_all_locales(code: &mut String, dirs: &[String], cldr_main: &Path) {
-    code.push_str("pub static ALL_LOCALES: &[LocaleData] = &[\n");
+    code.push_str("pub(crate) static ALL_LOCALES: &[LocaleData] = &[\n");
     for locale in dirs {
         let arr_name = ident(locale);
         let cf = extract_format(
@@ -121,7 +122,7 @@ fn emit_all_locales(code: &mut String, dirs: &[String], cldr_main: &Path) {
 
 fn emit_lookup_fn(code: &mut String) {
     code.push_str(
-        "pub fn lookup(locale: &str) -> Option<&'static LocaleData> {\n\
+        "pub(crate) fn lookup(locale: &str) -> Option<&'static LocaleData> {\n\
          ALL_LOCALES.binary_search_by_key(&locale, |d| d.locale)\n\
          .ok().map(|i| &ALL_LOCALES[i])\n\
          }\n",
@@ -178,8 +179,6 @@ fn esc(s: &str) -> String {
     out
 }
 
-/// Locale names used as JSON pointer keys. Only `~` and `/` need escaping,
-/// and locale identifiers never contain them. Still, do it safely.
 fn pointer_key(s: &str) -> String {
     s.replace('~', "~0").replace('/', "~1")
 }
