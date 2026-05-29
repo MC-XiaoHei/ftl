@@ -14,7 +14,7 @@ Compile-time conversion of Fluent (.ftl) translation files to type-safe Rust fun
 Test Environment: AMD AI 9 H 365, `cargo bench -p example`.
 
 - pure text: < 5ns
-- translate with placeholder: < 50ns
+- translate with placeholder(include implicate NUMBER() call): < 50ns
 - translate with builtin NUMBER() func: < 1us
 - translate with builtin DATETIME() func: < 5us
 
@@ -72,6 +72,65 @@ fn main() {
     println!("{}", t!(files(1)));
 }
 ```
+
+## Features
+
+### `builtin` feature (enabled by default)
+
+When enabled, `NUMBER()` and `DATETIME()` built-in functions are automatically registered with locale-aware formatting backed by CLDR data.
+
+Numeric variables (`{ $count }`) are also implicitly formatted through `NUMBER()` — no need to write `NUMBER($count)` in your FTL files.
+
+```toml
+[build-dependencies]
+ftl-codegen = { version = "0.1", features = ["builtin"] }
+
+[dependencies]
+ftl-builtin = { version = "0.1" }
+unic-langid = { version = "0.9", features = ["unic-langid-macros"] }
+```
+
+## Custom built-in functions
+
+Register your own via `ftl_builtin!` macro and `.register()`:
+
+```rust
+// build.rs
+use ftl_codegen::BuiltInFuncDef;
+
+fn main() {
+    ftl_codegen::generator()
+        .register(test_builtin())
+        .generate();
+}
+
+fn test_builtin() -> BuiltInFuncDef {
+    ftl_codegen::ftl_builtin! {
+        Test(FluentNum) {
+            operator: String,
+            operand: f64,
+        }
+        impl |this, out, _lang| {
+            use std::fmt::Write;
+            let result = match this.operator.as_deref() {
+                Some("+") => *this.value + this.operand.unwrap_or(0.0),
+                Some("-") => *this.value - this.operand.unwrap_or(0.0),
+                _ => *this.value,
+            };
+            write!(out, "{}", result).unwrap();
+        }
+    }
+}
+```
+
+Use in FTL:
+```fluent
+result = { TEST($value, operator: "+", operand: 10) }
+```
+
+The `impl |this, out, lang|` block receives `this` (the built-in struct with `value` and named args), an output `String`, and the `Lang` enum for locale. Omit `lang` if the function doesn't need locale.
+
+Custom built-ins **do not** require the `builtin` feature.
 
 ## Message Compilation
 
